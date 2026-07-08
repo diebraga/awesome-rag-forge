@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Scale, SendHorizontal } from "lucide-react";
+import { Database, SendHorizontal } from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
@@ -29,7 +29,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: 1,
     role: "bot",
-    text: "Hi. I am Legal Bot, running against a local model. Ask a legal question and I will give general information, flag issues, and tell you when a lawyer should review it.",
+    text: "Hi. I am connected to a local model and an approved RAG knowledge base. Ask a question and I will answer using retrieved context when it is available.",
   },
 ];
 
@@ -108,15 +108,15 @@ export default function Home() {
         <Card className="w-full gap-0 rounded-2xl border-[#ddd6c9] bg-white py-0 shadow-[0_24px_80px_rgba(25,24,22,0.12)]">
           <CardHeader className="px-6 py-5">
             <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#8a5a2b]">
-              <Scale className="size-4" />
-              Legal Bot
+              <Database className="size-4" />
+              RAG Chat
             </div>
             <CardTitle className="text-2xl font-semibold tracking-tight">
-              Ask the robot
+              Ask your knowledge base
             </CardTitle>
             <CardDescription className="max-w-xl leading-6">
-              Connected to Ollama locally with Qwen2.5 7B Instruct. RAG and
-              document tools come next.
+              Connected to Ollama locally with Qwen2.5 7B Instruct, plus
+              approved RAG context managed through the MCP server.
             </CardDescription>
           </CardHeader>
 
@@ -135,7 +135,7 @@ export default function Home() {
                   {message.role === "bot" && (
                     <Avatar size="sm">
                       <AvatarFallback className="bg-[#191816] text-white">
-                        LB
+                        AI
                       </AvatarFallback>
                     </Avatar>
                   )}
@@ -159,7 +159,7 @@ export default function Home() {
                 <div className="flex items-end gap-3">
                   <Avatar size="sm">
                     <AvatarFallback className="bg-[#191816] text-white">
-                      LB
+                      AI
                     </AvatarFallback>
                   </Avatar>
                   <div className="max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
@@ -184,7 +184,7 @@ export default function Home() {
                 id="message"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="Ask a legal question..."
+                placeholder="Ask a question..."
                 className="h-12 flex-1 rounded-xl bg-white px-4"
                 disabled={isLoading}
               />

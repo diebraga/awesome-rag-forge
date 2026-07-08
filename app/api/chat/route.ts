@@ -11,15 +11,13 @@ type ChatRequest = {
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct";
 
-const systemPrompt = `You are Legal Bot, a careful legal information assistant running locally.
+const systemPrompt = `You are a helpful assistant running locally, answering questions using an approved RAG knowledge base when relevant context is available.
 
 Rules:
-- Give general legal information and practical issue-spotting, not final legal advice.
-- Ask for jurisdiction when it matters and is missing.
 - Be concise, plain-spoken, and specific.
-- Never invent statutes, cases, citations, or facts.
-- Say when a licensed lawyer should review the issue.
-- If the question involves immediate deadlines, litigation, criminal exposure, immigration status, or high financial risk, recommend speaking with a lawyer.`;
+- Never invent facts, sources, or citations.
+- If retrieved context is provided, cite the source labels you used.
+- If you are not confident in an answer, say so instead of guessing.`;
 
 export async function POST(request: Request) {
   try {

@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "Legal Bot",
-  description: "Frontend chat shell for a legal AI assistant.",
+  title: "Talk to RAG",
+  description: "Chat UI for a conversational, MCP-managed RAG knowledge base.",
 };
 
 export default function RootLayout({

@@ -11,12 +11,10 @@ enum RagSourceType {
   MARKDOWN
   PDF
   DOCX
+  TXT
   URL
-  STATUTE
-  REGULATION
-  CASE
-  MEMO
-  CHECKLIST
+  API
+  NOTE
   USER_UPLOAD
   OTHER
 }
@@ -44,18 +42,20 @@ enum RagReviewStatus {
 }
 
 model RagCollection {
-  id           String        @id @default(cuid())
-  name         String
-  description  String?
-  matterType   String?
-  jurisdiction String?
-  documents    RagDocument[]
-  evalCases    RagEvalCase[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  category    String?
+  domain      String?
+  tags        String[]      @default([])
+  metadata    Json?
+  documents   RagDocument[]
+  evalCases   RagEvalCase[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
-  @@index([matterType])
-  @@index([jurisdiction])
+  @@index([category])
+  @@index([domain])
 }
 
 model RagDocument {
@@ -66,8 +66,9 @@ model RagDocument {
   sourceType   RagSourceType
   sourceUrl    String?
   storageKey   String?
-  jurisdiction String?
-  matterType   String?
+  category     String?
+  domain       String?
+  tags         String[]      @default([])
   status       RagStatus     @default(DRAFT)
   metadata     Json?
   chunks       RagChunk[]
@@ -80,27 +81,27 @@ model RagDocument {
   @@index([collectionId])
   @@index([status])
   @@index([sourceType])
-  @@index([matterType])
-  @@index([jurisdiction])
+  @@index([category])
+  @@index([domain])
 }
 
 model RagChunk {
-  id            String      @id @default(cuid())
-  documentId    String
-  document      RagDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  chunkText     String
-  chunkIndex    Int
-  pageNumber    Int?
-  sectionTitle  String?
-  tokenCount    Int?
-  embedding     Unsupported("vector(768)")?
-  status        RagStatus   @default(DRAFT)
-  metadata      Json?
-  sources       RagSource[]
-  reviews       RagReview[]
-  feedback      RagFeedback[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id           String        @id @default(cuid())
+  documentId   String
+  document     RagDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkText    String
+  chunkIndex   Int
+  pageNumber   Int?
+  sectionTitle String?
+  tokenCount   Int?
+  embedding    Unsupported("vector(768)")?
+  status       RagStatus     @default(DRAFT)
+  metadata     Json?
+  sources      RagSource[]
+  reviews      RagReview[]
+  feedback     RagFeedback[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@unique([documentId, chunkIndex])
   @@index([documentId])
@@ -109,17 +110,17 @@ model RagChunk {
 }
 
 model RagSource {
-  id           String       @id @default(cuid())
+  id           String      @id @default(cuid())
   documentId   String
-  document     RagDocument  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document     RagDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   chunkId      String?
-  chunk        RagChunk?    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  chunk        RagChunk?   @relation(fields: [chunkId], references: [id], onDelete: Cascade)
   label        String
   citationText String?
   pageNumber   Int?
   sectionTitle String?
   sourceUrl    String?
-  createdAt    DateTime     @default(now())
+  createdAt    DateTime    @default(now())
 
   @@index([documentId])
   @@index([chunkId])
@@ -167,13 +168,13 @@ model RagEvalCase {
   question        String
   expectedAnswer  String?
   expectedSources Json?
-  matterType      String?
-  jurisdiction    String?
-  tags            String[]
+  category        String?
+  domain          String?
+  tags            String[]       @default([])
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
   @@index([collectionId])
-  @@index([matterType])
-  @@index([jurisdiction])
+  @@index([category])
+  @@index([domain])
 }

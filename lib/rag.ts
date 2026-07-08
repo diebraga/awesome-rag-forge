@@ -14,8 +14,8 @@ export async function getRagContext() {
       document: {
         select: {
           title: true,
-          jurisdiction: true,
-          matterType: true,
+          category: true,
+          domain: true,
         },
       },
       sources: {
@@ -36,10 +36,8 @@ export async function getRagContext() {
     return [
       `Source ${index + 1}: ${source?.label ?? chunk.document.title}`,
       `Title: ${chunk.document.title}`,
-      chunk.document.jurisdiction
-        ? `Jurisdiction: ${chunk.document.jurisdiction}`
-        : null,
-      chunk.document.matterType ? `Matter: ${chunk.document.matterType}` : null,
+      chunk.document.category ? `Category: ${chunk.document.category}` : null,
+      chunk.document.domain ? `Domain: ${chunk.document.domain}` : null,
       chunk.sectionTitle ? `Section: ${chunk.sectionTitle}` : null,
       source?.citationText ? `Citation: ${source.citationText}` : null,
       `Text: ${chunk.chunkText}`,
