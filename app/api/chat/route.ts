@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getRagContext } from "@/lib/rag";
 
 type ChatRequest = {
   messages?: Array<{
@@ -24,9 +25,16 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ChatRequest;
     const messages = body.messages ?? [];
+    const ragContext = await getRagContext();
+    const ragPrompt =
+      ragContext.length > 0
+        ? `\n\nApproved RAG context from the database:\n\n${ragContext.join(
+            "\n\n---\n\n",
+          )}\n\nUse this context when relevant and cite the source labels.`
+        : "";
 
     const ollamaMessages = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: `${systemPrompt}${ragPrompt}` },
       ...messages.map((message) => ({
         role: message.role === "bot" ? "assistant" : "user",
         content: message.text,

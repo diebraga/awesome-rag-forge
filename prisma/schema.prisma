@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RagSourceType {
+  MARKDOWN
+  PDF
+  DOCX
+  URL
+  STATUTE
+  REGULATION
+  CASE
+  MEMO
+  CHECKLIST
+  USER_UPLOAD
+  OTHER
+}
+
+enum RagStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum RagFeedbackRating {
+  GOOD
+  BAD
+  INCOMPLETE
+  UNSAFE
+  OUTDATED
+}
+
+enum RagReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model RagCollection {
+  id           String        @id @default(cuid())
+  name         String
+  description  String?
+  matterType   String?
+  jurisdiction String?
+  documents    RagDocument[]
+  evalCases    RagEvalCase[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([matterType])
+  @@index([jurisdiction])
+}
+
+model RagDocument {
+  id           String        @id @default(cuid())
+  collectionId String
+  collection   RagCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  title        String
+  sourceType   RagSourceType
+  sourceUrl    String?
+  storageKey   String?
+  jurisdiction String?
+  matterType   String?
+  status       RagStatus     @default(DRAFT)
+  metadata     Json?
+  chunks       RagChunk[]
+  sources      RagSource[]
+  reviews      RagReview[]
+  feedback     RagFeedback[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([collectionId])
+  @@index([status])
+  @@index([sourceType])
+  @@index([matterType])
+  @@index([jurisdiction])
+}
+
+model RagChunk {
+  id            String      @id @default(cuid())
+  documentId    String
+  document      RagDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkText     String
+  chunkIndex    Int
+  pageNumber    Int?
+  sectionTitle  String?
+  tokenCount    Int?
+  embedding     Unsupported("vector(768)")?
+  status        RagStatus   @default(DRAFT)
+  metadata      Json?
+  sources       RagSource[]
+  reviews       RagReview[]
+  feedback      RagFeedback[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([documentId, chunkIndex])
+  @@index([documentId])
+  @@index([status])
+  @@index([sectionTitle])
+}
+
+model RagSource {
+  id           String       @id @default(cuid())
+  documentId   String
+  document     RagDocument  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkId      String?
+  chunk        RagChunk?    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  label        String
+  citationText String?
+  pageNumber   Int?
+  sectionTitle String?
+  sourceUrl    String?
+  createdAt    DateTime     @default(now())
+
+  @@index([documentId])
+  @@index([chunkId])
+}
+
+model RagFeedback {
+  id         String            @id @default(cuid())
+  documentId String?
+  document   RagDocument?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  chunkId    String?
+  chunk      RagChunk?         @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  question   String?
+  answer     String?
+  rating     RagFeedbackRating
+  comment    String?
+  metadata   Json?
+  createdAt  DateTime          @default(now())
+
+  @@index([documentId])
+  @@index([chunkId])
+  @@index([rating])
+}
+
+model RagReview {
+  id         String          @id @default(cuid())
+  documentId String?
+  document   RagDocument?    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunkId    String?
+  chunk      RagChunk?       @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  status     RagReviewStatus @default(PENDING)
+  reviewer   String?
+  notes      String?
+  createdAt  DateTime        @default(now())
+  reviewedAt DateTime?
+
+  @@index([documentId])
+  @@index([chunkId])
+  @@index([status])
+}
+
+model RagEvalCase {
+  id              String         @id @default(cuid())
+  collectionId    String?
+  collection      RagCollection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  question        String
+  expectedAnswer  String?
+  expectedSources Json?
+  matterType      String?
+  jurisdiction    String?
+  tags            String[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([collectionId])
+  @@index([matterType])
+  @@index([jurisdiction])
+}
