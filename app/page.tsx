@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Scale, SendHorizontal } from "lucide-react";
 import {
   Avatar,
@@ -29,31 +29,77 @@ const initialMessages: ChatMessage[] = [
   {
     id: 1,
     role: "bot",
-    text: "Hi. I am your legal bot shell. Ask a question here and, for now, I will echo it back until the model is connected.",
+    text: "Hi. I am Legal Bot, running against a local model. Ask a legal question and I will give general information, flag issues, and tell you when a lawyer should review it.",
   },
 ];
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const question = input.trim();
-    if (!question) return;
+    if (!question || isLoading) return;
 
-    const nextId = messages.length + 1;
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      { id: nextId, role: "user", text: question },
-      {
-        id: nextId + 1,
-        role: "bot",
-        text: "Model not connected yet. Next step: wire this chatbox to your legal-agent API, RAG search, and local model server.",
-      },
-    ]);
+    const userMessage: ChatMessage = {
+      id: Date.now(),
+      role: "user",
+      text: question,
+    };
+    const nextMessages = [...messages, userMessage];
+
+    setMessages(nextMessages);
     setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+
+      const data = (await response.json()) as {
+        reply?: string;
+        error?: string;
+      };
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: Date.now() + 1,
+          role: "bot",
+          text:
+            data.reply ??
+            data.error ??
+            "The local model did not return a response.",
+        },
+      ]);
+    } catch (error) {
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: Date.now() + 1,
+          role: "bot",
+          text:
+            error instanceof Error
+              ? error.message
+              : "Unable to reach the local model.",
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -69,8 +115,8 @@ export default function Home() {
               Ask the robot
             </CardTitle>
             <CardDescription className="max-w-xl leading-6">
-              Frontend-only chat shell. The model, RAG, and harness will be
-              connected in the next pass.
+              Connected to Ollama locally with Qwen2.5 7B Instruct. RAG and
+              document tools come next.
             </CardDescription>
           </CardHeader>
 
@@ -97,7 +143,7 @@ export default function Home() {
                     className={
                       message.role === "user"
                         ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground"
-                        : "max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"
+                        : "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"
                     }
                   >
                     {message.text}
@@ -109,6 +155,19 @@ export default function Home() {
                   )}
                 </div>
               ))}
+              {isLoading && (
+                <div className="flex items-end gap-3">
+                  <Avatar size="sm">
+                    <AvatarFallback className="bg-[#191816] text-white">
+                      LB
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
+                    Thinking...
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
           </CardContent>
@@ -127,13 +186,15 @@ export default function Home() {
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="Ask a legal question..."
                 className="h-12 flex-1 rounded-xl bg-white px-4"
+                disabled={isLoading}
               />
               <Button
                 type="submit"
                 size="lg"
                 className="h-12 rounded-xl px-5"
+                disabled={isLoading}
               >
-                Send
+                {isLoading ? "Wait" : "Send"}
                 <SendHorizontal data-icon="inline-end" className="size-4" />
               </Button>
             </form>
