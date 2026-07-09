@@ -147,11 +147,6 @@ async function main() {
       statement: "Cite sources for retrieved information when available.",
     },
     {
-      id: "harness_rule_seed_cap_explain",
-      kind: "CAPABILITY",
-      statement: "Explain what the knowledge base currently contains.",
-    },
-    {
       id: "harness_rule_seed_restrict_writes",
       kind: "RESTRICTION",
       statement: "Cannot create, edit, approve, reject, archive, or delete knowledge.",
@@ -166,7 +161,29 @@ async function main() {
       kind: "RESTRICTION",
       statement: "Cannot perform any action outside retrieval and answering questions.",
     },
+    {
+      id: "harness_rule_seed_restrict_structure",
+      kind: "RESTRICTION",
+      statement:
+        "Cannot describe its own internal structure — collection names, categories, tags, or document counts — even if asked directly. Can only answer using retrieved content.",
+    },
   ];
+
+  // Superseded by harness_rule_seed_restrict_structure above: an earlier
+  // default told the chat it could "explain what the knowledge base
+  // contains," which led to it narrating structure/meta-information to end
+  // users. Archive it so a re-seed of an existing database doesn't leave a
+  // stale, contradictory capability live alongside the new restriction.
+  await prisma.harnessRule.upsert({
+    where: { id: "harness_rule_seed_cap_explain" },
+    update: { status: "ARCHIVED" },
+    create: {
+      id: "harness_rule_seed_cap_explain",
+      kind: "CAPABILITY",
+      statement: "Explain what the knowledge base currently contains.",
+      status: "ARCHIVED",
+    },
+  });
 
   for (const rule of defaultHarnessRules) {
     await prisma.harnessRule.upsert({

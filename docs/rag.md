@@ -38,7 +38,7 @@ Continuous improvement is meant to be human-reviewed end to end: capture feedbac
 
 The chat assistant's display name and behavior instructions live in a separate `AssistantConfig` table (a singleton row), not in `RagCollection`/`RagDocument`/`RagChunk`. This is deliberate: early versions of the seed data described the assistant's own capabilities in second person ("you can ask the assistant to..."), and when that text got retrieved as RAG context, the model recited it back confusingly, blending its own identity with the MCP assistant's. Keeping identity/config out of the retrievable corpus avoids that failure mode entirely — it can never be "found" by a search query and quoted back.
 
-`AssistantConfig` is writable only through the MCP server's `set_assistant_name` tool (a direct write — it's config, not knowledge, so it doesn't go through the propose/approve workflow). See [lib/rag/context.ts](../lib/rag/context.ts), which combines this identity, harness capabilities/restrictions, knowledge-base scope stats, and retrieved chunks into one shared context bundle used by both the chat route and `GET /api/rag/context`.
+`AssistantConfig` is writable only through the MCP server's `set_assistant_name` tool (a direct write — it's config, not knowledge, so it doesn't go through the propose/approve workflow). See [lib/rag/chat-context.ts](../lib/rag/chat-context.ts), which combines this identity, harness capabilities/restrictions, knowledge-base scope stats, and retrieved chunks into one shared context bundle used by both the chat route and `GET /api/rag/context`.
 
 ## The harness: capabilities and restrictions
 

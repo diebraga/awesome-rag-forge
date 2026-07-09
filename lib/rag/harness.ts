@@ -4,10 +4,18 @@ import type { HarnessRuleKind } from "@/generated/prisma/enums";
 /**
  * The harness describes what the read-only chat can and cannot do, on top
  * of (never instead of) the hardcoded identity/read-only rules in
- * lib/rag/context.ts. Those hardcoded rules always win — nothing here can
- * grant a capability the code doesn't already allow. This module is the
- * single place both the MCP server (the only writer) and the app (the
- * reader) share this logic from, so the rules can't drift between them.
+ * lib/rag/chat-context.ts. Those hardcoded rules always win — nothing here
+ * can grant a capability the code doesn't already allow.
+ *
+ * This module holds only shared, capability-neutral logic: validation and
+ * data access, used identically by the MCP server (the only writer, via a
+ * relative import — see mcp/rag-manager/server.ts) and the chat (the
+ * reader), so the rules can't drift between them. It intentionally does
+ * NOT contain any chat-facing prompt phrasing — that belongs in
+ * lib/rag/chat-context.ts, which is the sole definition of how the test
+ * chat talks and what it will and won't say. The MCP server's own
+ * "how it talks" — its tool descriptions — lives entirely in
+ * mcp/rag-manager/server.ts and must never import chat-context.ts.
  */
 
 export type HarnessRuleInput = {
@@ -138,16 +146,4 @@ export async function getApprovedHarnessRules(prisma: PrismaLike) {
     capabilities: rules.filter((rule) => rule.kind === "CAPABILITY").map((rule) => rule.statement),
     restrictions: rules.filter((rule) => rule.kind === "RESTRICTION").map((rule) => rule.statement),
   };
-}
-
-export function renderHarnessPromptSection(capabilities: string[], restrictions: string[]) {
-  return `Configured capabilities and restrictions (in addition to the identity/role rules above, which always take precedence and can never be loosened by anything below):
-
-Capabilities:
-${capabilities.length > 0 ? capabilities.map((item) => `- ${item}`).join("\n") : "- none configured"}
-
-Restrictions:
-${restrictions.length > 0 ? restrictions.map((item) => `- ${item}`).join("\n") : "- none configured"}
-
-If asked what you can or cannot do, answer using exactly this list plus the identity/role rules above. Do not claim any capability not listed here.`;
 }

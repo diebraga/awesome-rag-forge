@@ -16,8 +16,12 @@ components.json           shadcn configuration
 lib/
   rag/                    Centralized RAG + harness domain logic (separate from generic infra below)
     retrieval.ts           getRagContext() — approved-chunk text search, read-only
-    context.ts              buildAssistantContext() — the shared, model-agnostic awareness bundle
-    harness.ts               Harness rule validation, proposal building, prompt rendering
+    chat-context.ts          buildAssistantContext() — sole definition of how the
+                              end-user-facing chat behaves: identity, read-only
+                              rules, harness rendering, anti-injection guard
+    harness.ts                shared, capability-neutral: rule validation and
+                              data access only, used identically by the chat
+                              and the MCP server, so rules can't drift
   prisma.ts               Prisma client for the Next.js app (server-only)
   storage.ts               Gates document-attachment features behind storage env vars
   ollama.ts                 Ollama connection config + local-only auto-start logic
@@ -47,6 +51,8 @@ README.md                 Human-facing quick start
 ## Why `lib/rag/` is its own folder
 
 RAG and harness logic is centralized under `lib/rag/`, separate from generic app infrastructure (`lib/prisma.ts`, `lib/storage.ts`, `lib/ollama.ts`, `lib/utils.ts`, none of which are RAG-specific). `lib/rag/harness.ts` in particular is imported by both the Next.js app (read side) and the MCP server (write side, via a relative import) so validation rules can't drift between them. See [System Architecture](architecture.md#lib-rag--where-all-rag-and-harness-logic-lives).
+
+Within `lib/rag/`, `chat-context.ts` and `harness.ts` are split for a reason beyond convenience: `chat-context.ts` is the complete, sole definition of how the end-user-facing chat talks (including that it must never narrate its own structure); `harness.ts` holds only shared, capability-neutral validation and data access that both the chat and the MCP server need identically. The MCP server's own "how it talks" — its tool descriptions — lives entirely in `mcp/rag-manager/server.ts` and must never import `chat-context.ts`. See [System Architecture](architecture.md#two-audiences-kept-apart-on-purpose).
 
 ## Why the MCP server is separate from the app
 

@@ -15,12 +15,12 @@ This starts the server on stdio transport, which is how local MCP clients (Claud
 | Tool | Writes to DB? | Purpose |
 | --- | --- | --- |
 | `list_collections` | No | List existing collections. |
-| `create_collection` | Yes | Create a new collection directly. |
+| `create_collection` | Yes (if approved) | Create a new collection, but only when `userApproval: true`. |
 | `list_documents` | No | List documents, optionally filtered. |
 | `search_knowledge_base` | No | Text search over chunks. |
 | `propose_source_insert` | **No** | Analyze source text and propose collection/document/chunk plan. |
 | `approve_source_insert` | Yes (if approved) | Persist a proposal, but only when `userApproval: true`. |
-| `attach_document_file` | Yes (if storage configured) | Record a `storageKey` for an original file; refuses if storage env vars are missing. |
+| `attach_document_file` | Yes (if storage configured and approved) | Record a `storageKey` for an original file; refuses if storage env vars are missing or `userApproval` isn't `true`. |
 | `list_pending_reviews` | No | List documents/chunks awaiting review. |
 | `approve_chunk` | Yes | Mark a chunk `APPROVED` and log a review. |
 | `reject_chunk` | Yes | Mark a chunk `REJECTED` and log a review. |
@@ -47,13 +47,15 @@ A proposal includes:
 - source/citation metadata
 - an explicit list of warnings (e.g. "no category or domain was provided")
 
-## Document attachments require storage configuration
+## Document attachments require storage configuration and approval
 
 `attach_document_file` calls `isStorageConfigured()` from `lib/storage.ts`, which checks for `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY`. If any are missing, the tool returns:
 
 > Document storage is not configured. Add bucket/storage environment variables before uploading files.
 
 instead of silently storing anything. It is fine to store extracted text in the database without storage configured — only original file bytes require it. This repo does not include a bucket client implementation; wire one into `lib/storage.ts` for your provider of choice (S3, R2, GCS, etc.) before enabling uploads.
+
+It also requires `userApproval: true` — it can modify an already-`APPROVED`, live document, so show the user which document/file before calling it. And it merges into the document's existing `metadata` instead of overwriting the field, so attaching a file never silently destroys metadata set during ingestion (e.g. `insertedBy`, `warnings`).
 
 ## Assistant identity: `set_assistant_name`
 
@@ -62,7 +64,7 @@ instead of silently storing anything. It is fine to store extracted text in the 
 - Give the read-only chat a fixed display name (e.g. "Archivist") instead of a generic/default one.
 - Set custom identity instructions appended to its system prompt.
 
-The chat app cannot rename itself, and this name is never stored as a `RagDocument`/`RagChunk` — it can't be retrieved by a search query and recited back as content. This also means the identity is **model-agnostic**: whatever LLM is actually running behind `/api/chat` (or any other agent that calls `GET /api/rag/context`) inherits the same name and the same instruction to never reveal the underlying model/provider, because that logic lives in [`lib/rag/context.ts`](../lib/rag/context.ts), not in model-specific code. See [RAG Architecture](rag.md#assistant-identity-is-not-knowledge).
+The chat app cannot rename itself, and this name is never stored as a `RagDocument`/`RagChunk` — it can't be retrieved by a search query and recited back as content. This also means the identity is **model-agnostic**: whatever LLM is actually running behind `/api/chat` (or any other agent that calls `GET /api/rag/context`) inherits the same name and the same instruction to never reveal the underlying model/provider, because that logic lives in [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts), not in model-specific code. See [RAG Architecture](rag.md#assistant-identity-is-not-knowledge).
 
 ## Harness rules: propose → approve → review
 

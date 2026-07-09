@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildAssistantContext } from "@/lib/rag/context";
+import { buildAssistantContext } from "@/lib/rag/chat-context";
 import { OLLAMA_MODEL, OLLAMA_URL } from "@/lib/ollama";
 
 type ChatRequest = {
@@ -13,16 +13,10 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ChatRequest;
     const messages = body.messages ?? [];
-    const { name, systemPrompt, ragContext } = await buildAssistantContext();
-    const ragPrompt =
-      ragContext.length > 0
-        ? `\n\nApproved RAG context from the database:\n\n${ragContext.join(
-            "\n\n---\n\n",
-          )}\n\nUse this context when relevant and cite the source labels.`
-        : "";
+    const { name, systemPrompt } = await buildAssistantContext();
 
     const ollamaMessages = [
-      { role: "system", content: `${systemPrompt}${ragPrompt}` },
+      { role: "system", content: systemPrompt },
       ...messages.map((message) => ({
         role: message.role === "bot" ? "assistant" : "user",
         content: message.text,

@@ -81,16 +81,21 @@ server.registerTool(
   "create_collection",
   {
     title: "Create RAG collection",
-    description: "Create a knowledge collection such as 'Onboarding Docs' or 'API Reference'.",
+    description:
+      "Create a knowledge collection such as 'Onboarding Docs' or 'API Reference'. Show the proposed collection to the user and ask for confirmation before calling this with userApproval: true — refuses otherwise. (propose_source_insert / approve_source_insert can also create a collection as part of adding a source, gated the same way.)",
     inputSchema: {
       name: z.string().min(1),
       description: z.string().optional(),
       category: z.string().optional(),
       domain: z.string().optional(),
       tags: z.array(z.string()).default([]),
+      userApproval: z.boolean(),
     },
   },
-  async (input) => {
+  async ({ userApproval, ...input }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before creating a collection.");
+    }
     const collection = await prisma.ragCollection.create({ data: input });
     return jsonResult(collection);
   },
@@ -303,23 +308,37 @@ server.registerTool(
   {
     title: "Attach original document file",
     description:
-      "Record that an original file should be stored alongside a document. Requires bucket/storage environment variables to be configured; refuses otherwise.",
+      "Record that an original file should be stored alongside a document. Requires bucket/storage environment variables to be configured; refuses otherwise. This modifies an existing document (which may already be APPROVED and live in the chat) — show the user which document and file before calling this with userApproval: true; refuses otherwise.",
     inputSchema: {
       documentId: z.string(),
       fileName: z.string().min(1),
       storageKey: z.string().min(1),
+      userApproval: z.boolean(),
     },
   },
-  async ({ documentId, fileName, storageKey }) => {
+  async ({ documentId, fileName, storageKey, userApproval }) => {
     if (!isStorageConfigured()) {
       return textResult(STORAGE_NOT_CONFIGURED_MESSAGE);
     }
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before attaching a file to a document.");
+    }
+
+    const existing = await prisma.ragDocument.findUniqueOrThrow({
+      where: { id: documentId },
+      select: { metadata: true },
+    });
+    const existingMetadata =
+      existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+        ? (existing.metadata as Record<string, unknown>)
+        : {};
 
     const document = await prisma.ragDocument.update({
       where: { id: documentId },
       data: {
         storageKey,
         metadata: {
+          ...existingMetadata,
           originalFileName: fileName,
         },
       },

@@ -179,7 +179,7 @@ enum HarnessRuleKind {
 }
 
 /// Harness rules describe what the read-only chat can and cannot do, in
-/// addition to the hardcoded identity/read-only rules in lib/rag/context.ts
+/// addition to the hardcoded identity/read-only rules in lib/rag/chat-context.ts
 /// (which these can never loosen — see lib/rag/harness.ts). Configured only
 /// through the MCP server's propose -> approve -> review workflow, the same
 /// as knowledge writes. Only status: APPROVED rules are ever surfaced to a

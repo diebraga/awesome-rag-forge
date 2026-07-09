@@ -25,12 +25,26 @@ RAG-domain logic is centralized under `lib/rag/`, separate from generic infrastr
 
 ```text
 lib/rag/
-  retrieval.ts   getRagContext() — approved-chunk text search, read-only
-  context.ts     buildAssistantContext() — the model-agnostic awareness bundle
-  harness.ts     harness rule validation, proposal building, prompt rendering
+  retrieval.ts     getRagContext() — approved-chunk text search, read-only
+  chat-context.ts   buildAssistantContext() — the ONLY definition of how the
+                      test chat talks: identity, read-only rules, harness
+                      rendering, anti-injection guard, and the rule that it
+                      must never narrate its own structure
+  harness.ts         shared, capability-neutral: rule validation and data
+                      access only, used identically by the chat (read) and
+                      the MCP server (write) — no chat-facing phrasing here
 ```
 
-`lib/rag/harness.ts` in particular is imported by **both** sides on purpose: `mcp/rag-manager/server.ts` uses it (via a relative import, same pattern as `lib/storage.ts`) to validate and structure harness rule proposals before anything is written, and `lib/rag/context.ts` uses it to read `APPROVED` rules back out for the system prompt. One shared module means the validation rules can't drift between the write side and the read side.
+`lib/rag/harness.ts` in particular is imported by **both** sides on purpose: `mcp/rag-manager/server.ts` uses it (via a relative import, same pattern as `lib/storage.ts`) to validate and structure harness rule proposals before anything is written, and `lib/rag/chat-context.ts` uses it to read `APPROVED` rules back out for the system prompt. One shared module means the validation rules can't drift between the write side and the read side.
+
+### Two audiences, kept apart on purpose
+
+`lib/rag/chat-context.ts` and `mcp/rag-manager/server.ts` are not just gated differently on writes — they define behavior for two different audiences with two different disclosure rules, and neither should import the other's "how to talk" logic:
+
+- **`lib/rag/chat-context.ts`** — the *entire* definition of how the end-user-facing test chat behaves. It computes knowledge-base stats internally but explicitly instructs the model never to recite them; the chat can search and answer from content, but it cannot describe its own structure (collection names, categories, counts), even if asked.
+- **`mcp/rag-manager/server.ts`** — the *entire* definition of how the creator-facing MCP server behaves, entirely through each tool's own `description` (there's no single "MCP system prompt" — each tool carries its own instructions, which is the normal MCP idiom). `list_collections`/`list_documents`/`get_harness_rules` intentionally return full, named, structural data, because the person building the knowledge base needs it.
+
+If you're adding a capability, ask which audience it's for before deciding where it goes: information for the knowledge base's creator belongs in an MCP tool; behavior for the person testing/using the chat belongs in `lib/rag/chat-context.ts`. Don't let the two mix.
 
 ## Chat path (read-only)
 
@@ -39,10 +53,10 @@ Browser chat UI (app/page.tsx)
         ↓
 Next.js API route (app/api/chat/route.ts)
         ↓
-lib/rag/context.ts (buildAssistantContext) ──→ AssistantConfig (identity, read-only)
+lib/rag/chat-context.ts (buildAssistantContext) ──→ AssistantConfig (identity, read-only)
         ↓                                  ──→ lib/rag/retrieval.ts (approved chunks, read-only)
         ↓                                  ──→ lib/rag/harness.ts (approved capabilities/restrictions, read-only)
-        ↓                                  ──→ knowledge-base stats (counts/categories/domains/tags)
+        ↓                                  ──→ knowledge-base stats (internal calibration only, never recited)
 Ollama local model server
         ↓
 Response rendered in the chat UI
@@ -52,7 +66,7 @@ The chat route calls `buildAssistantContext()` to get a single assembled system 
 
 ### Any agent, not just this chat
 
-`buildAssistantContext()` in [`lib/rag/context.ts`](../lib/rag/context.ts) is the single, model-agnostic source of truth for identity, harness rules, and read-only behavior — it is not tied to Ollama or to this Next.js route. `GET /api/rag/context` exposes the same bundle over HTTP so a different LLM provider, a different app, or any other agent you connect later inherits the same name, the same instruction to never reveal the underlying model, the same configured capabilities/restrictions, and the same knowledge-base scope, without re-implementing any of this logic. See [API Routes](api-routes.md#get-apiragcontext).
+`buildAssistantContext()` in [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) is the single, model-agnostic source of truth for identity, harness rules, and read-only behavior — it is not tied to Ollama or to this Next.js route. `GET /api/rag/context` exposes the same bundle over HTTP so a different LLM provider, a different app, or any other agent you connect later inherits the same name, the same instruction to never reveal the underlying model, the same configured capabilities/restrictions, and the same knowledge-base scope, without re-implementing any of this logic. See [API Routes](api-routes.md#get-apiragcontext).
 
 ## Knowledge & harness management path (the only write path)
 

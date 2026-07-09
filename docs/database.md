@@ -51,7 +51,7 @@ DRAFT → PENDING_REVIEW → APPROVED
 APPROVED / REJECTED → ARCHIVED
 ```
 
-Only `APPROVED` documents and chunks are read by `lib/rag/retrieval.ts`. `HarnessRule` reuses this same `RagStatus` enum for its own review states, and only `APPROVED` rows are read by `lib/rag/context.ts`.
+Only `APPROVED` documents and chunks are read by `lib/rag/retrieval.ts`. `HarnessRule` reuses this same `RagStatus` enum for its own review states, and only `APPROVED` rows are read by `lib/rag/chat-context.ts`.
 
 ### `AssistantConfig` and `HarnessRule` are not part of this workflow
 
