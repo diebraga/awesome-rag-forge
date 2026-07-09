@@ -29,6 +29,8 @@ The schema uses `Unsupported("vector(768)")` for the chunk embedding column, whi
 | `RagReview` | A human decision (approve/reject) on a document or chunk. |
 | `RagFeedback` | User feedback on an answer or chunk (good/bad/incomplete/unsafe/outdated). |
 | `RagEvalCase` | A test question with an expected answer, for future RAG quality evaluation. |
+| `AssistantConfig` | Singleton row holding the chat assistant's display name and instructions. **Not knowledge content** — never retrieved or searched, writable only through the MCP server. |
+| `HarnessRule` | A capability or restriction statement (`kind: CAPABILITY \| RESTRICTION`) describing what the chat can/cannot do, with the same review states as knowledge. **Not knowledge content** — only `APPROVED` rows are read into the system prompt; writable only through the MCP server's propose → approve → review flow. |
 
 ### Generic classification fields
 
@@ -49,7 +51,11 @@ DRAFT → PENDING_REVIEW → APPROVED
 APPROVED / REJECTED → ARCHIVED
 ```
 
-Only `APPROVED` documents and chunks are read by `lib/rag.ts`.
+Only `APPROVED` documents and chunks are read by `lib/rag/retrieval.ts`. `HarnessRule` reuses this same `RagStatus` enum for its own review states, and only `APPROVED` rows are read by `lib/rag/context.ts`.
+
+### `AssistantConfig` and `HarnessRule` are not part of this workflow
+
+Neither is ever joined into retrieval/search queries — they're small, separate tables on purpose. `AssistantConfig` has no status at all (see [RAG Architecture](rag.md#assistant-identity-is-not-knowledge) for why identity/config must stay out of the searchable corpus). `HarnessRule` does reuse `RagStatus` for its review workflow, but it's a distinct table from `RagDocument`/`RagChunk` and never appears in `search_knowledge_base` results (see [RAG Architecture](rag.md#the-harness-capabilities-and-restrictions)).
 
 ## Regenerating the Prisma client
 

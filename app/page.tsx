@@ -1,29 +1,33 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Database, SendHorizontal } from "lucide-react";
-import {
-  Avatar,
-  AvatarFallback,
-} from "@/components/ui/avatar";
+import { SendHorizontal, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 
 type ChatMessage = {
   id: number;
   role: "bot" | "user";
   text: string;
 };
+
+type OllamaStatusResponse = {
+  ok: boolean;
+  running: boolean;
+  modelAvailable: boolean;
+  modelName: string;
+  availableModels: string[];
+  canAutoStart: boolean;
+};
+
+type ConnectionState =
+  | "checking"
+  | "connected"
+  | "disconnected"
+  | "starting"
+  | "not-installed"
+  | "model-missing";
 
 const initialMessages: ChatMessage[] = [
   {
@@ -33,21 +37,96 @@ const initialMessages: ChatMessage[] = [
   },
 ];
 
+function PersonAvatar() {
+  return (
+    <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 text-black">
+      <User className="size-4" />
+    </div>
+  );
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
+  const [modelName, setModelName] = useState("");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [canAutoStart, setCanAutoStart] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
+
+  async function checkOllamaStatus(): Promise<OllamaStatusResponse | null> {
+    try {
+      const response = await fetch("/api/ollama/status");
+      const data = (await response.json()) as OllamaStatusResponse;
+      setModelName(data.modelName);
+      setAvailableModels(data.availableModels ?? []);
+      setCanAutoStart(data.canAutoStart);
+
+      if (!data.running) {
+        setConnectionState("disconnected");
+      } else if (!data.modelAvailable) {
+        setConnectionState("model-missing");
+      } else {
+        setConnectionState("connected");
+      }
+      return data;
+    } catch {
+      setConnectionState("disconnected");
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    checkOllamaStatus();
+  }, []);
+
+  async function handleConnect() {
+    setConnectError(null);
+    setConnectionState("starting");
+
+    try {
+      const response = await fetch("/api/ollama/start", { method: "POST" });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+
+      if (!data.ok) {
+        setConnectError(data.error ?? "Unable to start Ollama.");
+        setConnectionState(
+          data.error?.toLowerCase().includes("not installed")
+            ? "not-installed"
+            : "disconnected",
+        );
+        return;
+      }
+    } catch {
+      setConnectError("Unable to reach the server to start Ollama.");
+      setConnectionState("disconnected");
+      return;
+    }
+
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const status = await checkOllamaStatus();
+      if (status?.running) return;
+    }
+
+    setConnectError(
+      "Ollama did not respond in time. It may still be starting — try Connect again in a moment.",
+    );
+    setConnectionState("disconnected");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const question = input.trim();
-    if (!question || isLoading) return;
+    if (!question || isLoading || connectionState !== "connected") return;
 
     const userMessage: ChatMessage = {
       id: Date.now(),
@@ -102,29 +181,122 @@ export default function Home() {
     }
   }
 
+  const chatDisabled = isLoading || connectionState !== "connected";
+
   return (
-    <main className="min-h-screen bg-[#f5f2ec] px-4 py-8 text-foreground">
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-3xl items-center justify-center">
-        <Card className="w-full gap-0 rounded-2xl border-[#ddd6c9] bg-white py-0 shadow-[0_24px_80px_rgba(25,24,22,0.12)]">
-          <CardHeader className="px-6 py-5">
-            <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#8a5a2b]">
-              <Database className="size-4" />
-              RAG Chat
-            </div>
-            <CardTitle className="text-2xl font-semibold tracking-tight">
-              Ask your knowledge base
-            </CardTitle>
-            <CardDescription className="max-w-xl leading-6">
-              Connected to Ollama locally with Qwen2.5 7B Instruct, plus
-              approved RAG context managed through the MCP server.
-            </CardDescription>
-          </CardHeader>
+    <main className="min-h-screen bg-white px-4 py-12 text-black">
+      <section className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <header className="space-y-2">
+          <p className="text-xs font-medium tracking-wide text-blue-600">
+            Read-only knowledge base viewer
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-black">
+            Test your RAG knowledge base
+          </h1>
+          <p className="text-sm leading-6 text-black/60">
+            This chat searches and answers using only the approved knowledge
+            base. Use it to verify that retrieval is working and see what the
+            knowledge base currently contains. It cannot add, edit, approve,
+            or delete knowledge — those actions happen exclusively through
+            the MCP server&apos;s proposal-and-approval workflow.
+          </p>
+        </header>
 
-          <Separator />
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-black/10 px-4 py-3 text-sm">
+          <label className="sr-only" htmlFor="model">
+            Model
+          </label>
+          <select
+            id="model"
+            value={modelName}
+            disabled={availableModels.length <= 1}
+            onChange={(event) => setModelName(event.target.value)}
+            className="h-9 rounded-lg border border-black/10 bg-white px-2 text-sm text-black disabled:opacity-70"
+          >
+            {(availableModels.length > 0 ? availableModels : [modelName])
+              .filter(Boolean)
+              .map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+          </select>
 
-          <CardContent className="p-0">
-            <ScrollArea className="h-[480px] px-6 py-6">
-              <div className="space-y-4">
+          <div className="flex flex-1 items-center gap-2">
+            {connectionState === "checking" && (
+              <span className="text-black/50">Checking Ollama...</span>
+            )}
+            {connectionState === "connected" && (
+              <span className="text-blue-600">Connected to Ollama</span>
+            )}
+            {connectionState === "model-missing" && (
+              <span className="text-black/60">
+                Ollama is running, but{" "}
+                <code className="rounded bg-black/5 px-1 py-0.5">{modelName}</code>{" "}
+                isn&apos;t pulled yet. Run{" "}
+                <code className="rounded bg-black/5 px-1 py-0.5">
+                  ollama pull {modelName}
+                </code>
+                , then reconnect.
+              </span>
+            )}
+            {(connectionState === "disconnected" ||
+              connectionState === "not-installed" ||
+              connectionState === "starting") && (
+              <span className="text-black/50">
+                {connectionState === "starting"
+                  ? "Starting Ollama..."
+                  : connectionState === "not-installed"
+                    ? "Ollama isn't installed on this machine."
+                    : "Ollama isn't running."}
+              </span>
+            )}
+          </div>
+
+          {connectionState !== "connected" && connectionState !== "checking" && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-lg"
+              disabled={connectionState === "starting" || !canAutoStart}
+              onClick={handleConnect}
+            >
+              {connectionState === "starting" ? "Connecting..." : "Connect to Ollama"}
+            </Button>
+          )}
+        </div>
+
+        {connectError && (
+          <p className="-mt-3 text-xs text-black/50">
+            {connectError}
+            {connectionState === "not-installed" && (
+              <>
+                {" "}
+                Get it from{" "}
+                <a
+                  href="https://ollama.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 underline underline-offset-2"
+                >
+                  ollama.com
+                </a>
+                .
+              </>
+            )}
+          </p>
+        )}
+        {!canAutoStart && connectionState !== "connected" && connectionState !== "checking" && (
+          <p className="-mt-3 text-xs text-black/50">
+            Auto-start isn&apos;t available for this configuration. Start Ollama
+            yourself, then refresh this page.
+          </p>
+        )}
+
+        <div className="flex flex-col gap-4">
+          <ScrollArea className="h-[480px]">
+            <div className="space-y-4 py-1">
               {messages.map((message) => (
                 <div
                   key={message.id}
@@ -132,13 +304,7 @@ export default function Home() {
                     message.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
-                  {message.role === "bot" && (
-                    <Avatar size="sm">
-                      <AvatarFallback className="bg-[#191816] text-white">
-                        AI
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
+                  {message.role === "bot" && <PersonAvatar />}
                   <div
                     className={
                       message.role === "user"
@@ -148,58 +314,48 @@ export default function Home() {
                   >
                     {message.text}
                   </div>
-                  {message.role === "user" && (
-                    <Avatar size="sm">
-                      <AvatarFallback>You</AvatarFallback>
-                    </Avatar>
-                  )}
+                  {message.role === "user" && <PersonAvatar />}
                 </div>
               ))}
               {isLoading && (
                 <div className="flex items-end gap-3">
-                  <Avatar size="sm">
-                    <AvatarFallback className="bg-[#191816] text-white">
-                      AI
-                    </AvatarFallback>
-                  </Avatar>
+                  <PersonAvatar />
                   <div className="max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
                     Thinking...
                   </div>
                 </div>
               )}
               <div ref={messagesEndRef} />
-              </div>
-            </ScrollArea>
-          </CardContent>
+            </div>
+          </ScrollArea>
 
-          <CardFooter className="rounded-b-2xl border-t border-[#ebe5da] bg-[#fbfaf7] p-4">
-            <form
-              onSubmit={handleSubmit}
-              className="flex w-full gap-3"
+          <form onSubmit={handleSubmit} className="flex w-full gap-3">
+            <label className="sr-only" htmlFor="message">
+              Message
+            </label>
+            <Input
+              id="message"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder={
+                connectionState === "connected"
+                  ? "Ask a question..."
+                  : "Connect to Ollama to start chatting"
+              }
+              className="h-12 flex-1 rounded-xl bg-white px-4"
+              disabled={chatDisabled}
+            />
+            <Button
+              type="submit"
+              size="lg"
+              className="h-12 rounded-xl px-5"
+              disabled={chatDisabled}
             >
-              <label className="sr-only" htmlFor="message">
-                Message
-              </label>
-              <Input
-                id="message"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder="Ask a question..."
-                className="h-12 flex-1 rounded-xl bg-white px-4"
-                disabled={isLoading}
-              />
-              <Button
-                type="submit"
-                size="lg"
-                className="h-12 rounded-xl px-5"
-                disabled={isLoading}
-              >
-                {isLoading ? "Wait" : "Send"}
-                <SendHorizontal data-icon="inline-end" className="size-4" />
-              </Button>
-            </form>
-          </CardFooter>
-        </Card>
+              {isLoading ? "Wait" : "Send"}
+              <SendHorizontal data-icon="inline-end" className="size-4" />
+            </Button>
+          </form>
+        </div>
       </section>
     </main>
   );

@@ -1,18 +1,18 @@
-# talk-to-rag-mcp
+# rag-builder-mcp
 
 A generic RAG (retrieval-augmented generation) knowledge base builder, managed by talking to an AI assistant through an MCP server — not through a manual admin panel.
 
-- **Chat app**: Next.js UI backed by a local model (Ollama) plus approved RAG context.
-- **Knowledge management**: an MCP server (`mcp/rag-manager`) that lets an MCP-connected assistant inspect, propose, and — only after your approval — write to the knowledge base.
+- **Chat app**: Next.js UI, **read-only**. It answers questions using approved RAG context (via a local model through Ollama) so you can test retrieval and see what the knowledge base contains. It cannot create, edit, approve, reject, archive, or delete anything.
+- **Knowledge management**: an MCP server (`mcp/rag-manager`), the **only** component that manages the knowledge base. An MCP-connected assistant inspects, proposes, and — only after your approval — writes to the knowledge base through it.
 - **Database**: Prisma + any Postgres-compatible database.
 
-New knowledge always starts as `PENDING_REVIEW`. Nothing reaches the live chat until a human approves it.
+New knowledge always starts as `PENDING_REVIEW`. Nothing reaches the live chat until a human approves it through the MCP server.
 
 ## Quick start
 
 ```bash
 git clone <your-fork-or-repo-url>
-cd talk-to-rag-mcp
+cd rag-builder-mcp
 npm install
 cp .env.example .env   # fill in DATABASE_URL
 npx prisma generate

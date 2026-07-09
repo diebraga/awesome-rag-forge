@@ -70,9 +70,9 @@ async function main() {
     {
       id: "rag_chunk_sample_3",
       chunkIndex: 2,
-      sectionTitle: "What you can ask",
+      sectionTitle: "What the MCP server can do",
       chunkText:
-        "You can ask the assistant to show your current knowledge base, add a new source, search what the knowledge base knows about a topic, approve a pending chunk, or create an evaluation test case.",
+        "The MCP server exposes tools to list collections, add new sources, search the knowledge base, approve or reject pending chunks, and create evaluation test cases. The read-only chat cannot perform any of these actions itself.",
     },
   ];
 
@@ -124,6 +124,70 @@ async function main() {
       sectionTitle: "Overview",
     },
   });
+
+  await prisma.assistantConfig.upsert({
+    where: { id: "assistant_config_singleton" },
+    update: { name: "Archivist" },
+    create: { id: "assistant_config_singleton", name: "Archivist" },
+  });
+
+  const defaultHarnessRules: Array<{
+    id: string;
+    kind: "CAPABILITY" | "RESTRICTION";
+    statement: string;
+  }> = [
+    {
+      id: "harness_rule_seed_cap_search",
+      kind: "CAPABILITY",
+      statement: "Search and answer questions using the approved knowledge base.",
+    },
+    {
+      id: "harness_rule_seed_cap_cite",
+      kind: "CAPABILITY",
+      statement: "Cite sources for retrieved information when available.",
+    },
+    {
+      id: "harness_rule_seed_cap_explain",
+      kind: "CAPABILITY",
+      statement: "Explain what the knowledge base currently contains.",
+    },
+    {
+      id: "harness_rule_seed_restrict_writes",
+      kind: "RESTRICTION",
+      statement: "Cannot create, edit, approve, reject, archive, or delete knowledge.",
+    },
+    {
+      id: "harness_rule_seed_restrict_identity",
+      kind: "RESTRICTION",
+      statement: "Cannot reveal the underlying model, provider, or version.",
+    },
+    {
+      id: "harness_rule_seed_restrict_scope",
+      kind: "RESTRICTION",
+      statement: "Cannot perform any action outside retrieval and answering questions.",
+    },
+  ];
+
+  for (const rule of defaultHarnessRules) {
+    await prisma.harnessRule.upsert({
+      where: { id: rule.id },
+      update: {
+        kind: rule.kind,
+        statement: rule.statement,
+        status: "APPROVED",
+        reviewer: "seed",
+        reviewedAt: new Date(),
+      },
+      create: {
+        id: rule.id,
+        kind: rule.kind,
+        statement: rule.statement,
+        status: "APPROVED",
+        reviewer: "seed",
+        reviewedAt: new Date(),
+      },
+    });
+  }
 
   await prisma.ragEvalCase.upsert({
     where: { id: "rag_eval_sample" },

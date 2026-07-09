@@ -45,8 +45,19 @@ New documents and chunks are saved as `PENDING_REVIEW` by default.
 - `reject_chunk`
 - `add_feedback`
 - `create_eval_case`
+- `get_assistant_config`
+- `set_assistant_name`
+- `get_harness_rules`
+- `propose_harness_update`
+- `approve_harness_update`
+- `approve_harness_rule`
+- `reject_harness_rule`
 
 `attach_document_file` refuses to run unless `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY` are all set. Without them it returns a clear error instead of silently storing anything.
+
+`set_assistant_name` writes directly (no propose/approve step) because it changes configuration, not knowledge content. It is the **only** way to change the read-only chat's display name and identity instructions — the chat app cannot rename itself, and this name is never stored as a `RagDocument`/`RagChunk`, so it can never be retrieved and recited back as "content." See [docs/rag.md](../../docs/rag.md).
+
+`propose_harness_update` / `approve_harness_update` / `approve_harness_rule` / `reject_harness_rule` manage `HarnessRule` rows describing what the chat can/cannot do. This is the most guarded write path in the server — one stage more than knowledge writes — and `propose_harness_update`/`approve_harness_update` both hard-refuse (in code, not just via instructions) any statement that would grant the chat write/delete/approve/bypass/reveal-model powers or try to remove a hardcoded protection. See [docs/mcp-server.md](../../docs/mcp-server.md#harness-rules-propose--approve--review).
 
 ## MVP Limits
 

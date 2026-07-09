@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getRagContext } from "@/lib/rag";
+import { buildAssistantContext } from "@/lib/rag/context";
+import { OLLAMA_MODEL, OLLAMA_URL } from "@/lib/ollama";
 
 type ChatRequest = {
   messages?: Array<{
@@ -8,22 +9,11 @@ type ChatRequest = {
   }>;
 };
 
-const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct";
-
-const systemPrompt = `You are a helpful assistant running locally, answering questions using an approved RAG knowledge base when relevant context is available.
-
-Rules:
-- Be concise, plain-spoken, and specific.
-- Never invent facts, sources, or citations.
-- If retrieved context is provided, cite the source labels you used.
-- If you are not confident in an answer, say so instead of guessing.`;
-
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ChatRequest;
     const messages = body.messages ?? [];
-    const ragContext = await getRagContext();
+    const { name, systemPrompt, ragContext } = await buildAssistantContext();
     const ragPrompt =
       ragContext.length > 0
         ? `\n\nApproved RAG context from the database:\n\n${ragContext.join(
@@ -58,7 +48,7 @@ export async function POST(request: Request) {
     if (!response.ok) {
       return NextResponse.json(
         {
-          error: `Ollama returned ${response.status}. Make sure ${OLLAMA_MODEL} is downloaded and Ollama is running.`,
+          error: `The model backend returned an error (${response.status}). Check that it is running and configured correctly.`,
         },
         { status: 502 }
       );
@@ -73,12 +63,12 @@ export async function POST(request: Request) {
     const reply = data.message?.content?.trim();
     if (!reply) {
       return NextResponse.json(
-        { error: "Ollama returned an empty response." },
+        { error: "The model backend returned an empty response." },
         { status: 502 }
       );
     }
 
-    return NextResponse.json({ reply, model: OLLAMA_MODEL });
+    return NextResponse.json({ reply, model: name });
   } catch (error) {
     return NextResponse.json(
       {

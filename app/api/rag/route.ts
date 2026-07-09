@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRagContext } from "@/lib/rag";
+import { getRagContext } from "@/lib/rag/retrieval";
 
 export async function GET() {
   try {

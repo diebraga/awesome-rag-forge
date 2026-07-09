@@ -161,6 +161,46 @@ model RagReview {
   @@index([status])
 }
 
+/// Assistant identity/config, kept as a singleton row. This is NOT knowledge
+/// content — it must never be modeled as a RagDocument/RagChunk, or it would
+/// become retrievable and get recited back by the chat model. Writable only
+/// through the MCP server (see mcp/rag-manager), read-only from the chat app.
+model AssistantConfig {
+  id           String   @id @default(cuid())
+  name         String
+  instructions String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+enum HarnessRuleKind {
+  CAPABILITY
+  RESTRICTION
+}
+
+/// Harness rules describe what the read-only chat can and cannot do, in
+/// addition to the hardcoded identity/read-only rules in lib/rag/context.ts
+/// (which these can never loosen — see lib/rag/harness.ts). Configured only
+/// through the MCP server's propose -> approve -> review workflow, the same
+/// as knowledge writes. Only status: APPROVED rules are ever surfaced to a
+/// connected chat/agent.
+model HarnessRule {
+  id          String          @id @default(cuid())
+  kind        HarnessRuleKind
+  statement   String
+  status      RagStatus       @default(DRAFT)
+  reason      String?
+  warnings    Json?
+  reviewer    String?
+  reviewNotes String?
+  reviewedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([kind])
+  @@index([status])
+}
+
 model RagEvalCase {
   id              String         @id @default(cuid())
   collectionId    String?

@@ -4,7 +4,7 @@
 
 ```bash
 git clone <your-fork-or-repo-url>
-cd talk-to-rag-mcp
+cd rag-builder-mcp
 npm install
 cp .env.example .env   # then fill in DATABASE_URL
 npx prisma generate
@@ -13,13 +13,13 @@ npm run db:seed
 npm run dev
 ```
 
-In a separate terminal, make sure [Ollama](https://ollama.com) is running with the configured model pulled:
+Open `http://localhost:3000` to use the chat UI. If [Ollama](https://ollama.com) isn't running yet, the chat UI shows a "Connect to Ollama" button that starts it for you (local dev only — see [API Routes](api-routes.md#post-apiollamastart)). If Ollama isn't installed at all, the button tells you so and links to ollama.com. Either way, make sure the configured model is pulled:
 
 ```bash
 ollama pull qwen2.5:7b-instruct
 ```
 
-Open `http://localhost:3000` to use the chat UI.
+The chat UI will tell you if Ollama is running but the model isn't pulled yet.
 
 ## Running the MCP server
 

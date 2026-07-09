@@ -2,31 +2,39 @@
 
 ```text
 app/
-  page.tsx              Chat UI (client component)
-  layout.tsx            Root layout and page metadata
-  api/chat/route.ts      Chat endpoint: calls Ollama with approved RAG context
-  api/rag/route.ts       Debug endpoint: returns the current approved RAG context
+  page.tsx                Chat UI (client component)
+  layout.tsx              Root layout and page metadata
+  api/chat/route.ts        Chat endpoint: calls Ollama with the full assistant context
+  api/rag/route.ts         Debug endpoint: returns the current approved RAG context
+  api/rag/context/route.ts  Full awareness bundle for external agents (identity, harness, stats, context)
+  api/ollama/status/route.ts Checks whether Ollama is reachable and the model is pulled
+  api/ollama/start/route.ts  Local-only: starts Ollama for the "Connect" button
 
-components/ui/           shadcn UI primitives (Card, Button, Input, Avatar, ScrollArea, Separator)
+components/ui/           shadcn UI primitives (Button, Input, Avatar, ScrollArea, Separator)
 components.json           shadcn configuration
 
 lib/
-  prisma.ts              Prisma client for the Next.js app (server-only)
-  rag.ts                 Builds RAG context strings from approved chunks
-  storage.ts             Gates document-attachment features behind storage env vars
-  utils.ts               shadcn class-name helper
+  rag/                    Centralized RAG + harness domain logic (separate from generic infra below)
+    retrieval.ts           getRagContext() — approved-chunk text search, read-only
+    context.ts              buildAssistantContext() — the shared, model-agnostic awareness bundle
+    harness.ts               Harness rule validation, proposal building, prompt rendering
+  prisma.ts               Prisma client for the Next.js app (server-only)
+  storage.ts               Gates document-attachment features behind storage env vars
+  ollama.ts                 Ollama connection config + local-only auto-start logic
+  utils.ts                   shadcn class-name helper
 
 mcp/
-  rag-manager/           Isolated MCP server for managing the knowledge base
-    server.ts             Tool registrations (list, propose, approve, review, feedback, eval)
-    proposal.ts            Builds and validates source-insert proposals
-    chunking.ts             Paragraph-based MVP chunking
-    prisma.ts               Prisma client for the MCP server (separate from lib/prisma.ts)
-    README.md                MCP-specific usage notes
+  rag-manager/            Isolated MCP server for managing the knowledge base and harness
+    server.ts               Tool registrations (list, propose, approve, review, feedback, eval, harness)
+    proposal.ts              Builds and validates source-insert proposals
+    chunking.ts               Paragraph-based MVP chunking
+    prisma.ts                 Prisma client for the MCP server (separate from lib/prisma.ts)
+    README.md                  MCP-specific usage notes
 
 prisma/
-  schema.prisma           Generic RAG schema (collections, documents, chunks, sources, reviews, feedback, eval cases)
-  seed.ts                  Seeds a sample collection describing this project
+  schema.prisma           Generic RAG + harness schema (collections, documents, chunks, sources,
+                           reviews, feedback, eval cases, assistant config, harness rules)
+  seed.ts                  Seeds a sample collection, default assistant name, and default harness rules
 
 docs/                     Modular documentation (this directory)
 CLAUDE.md                 Entry point for Claude Code sessions
@@ -35,6 +43,10 @@ AGENTS.md                 Project-specific coding notes shared by both assistant
 README.md                 Human-facing quick start
 .env.example              Documented environment variables (no secrets)
 ```
+
+## Why `lib/rag/` is its own folder
+
+RAG and harness logic is centralized under `lib/rag/`, separate from generic app infrastructure (`lib/prisma.ts`, `lib/storage.ts`, `lib/ollama.ts`, `lib/utils.ts`, none of which are RAG-specific). `lib/rag/harness.ts` in particular is imported by both the Next.js app (read side) and the MCP server (write side, via a relative import) so validation rules can't drift between them. See [System Architecture](architecture.md#lib-rag--where-all-rag-and-harness-logic-lives).
 
 ## Why the MCP server is separate from the app
 

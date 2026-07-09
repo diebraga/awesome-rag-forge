@@ -1,8 +1,13 @@
-# talk-to-rag-mcp — Codex entry point
+# rag-builder-mcp — Codex entry point
 
 See `AGENTS.md` first for the project-wide coding note that applies regardless of which assistant is running.
 
-Generic RAG knowledge base builder managed through an MCP server: a Next.js chat app reads approved knowledge; an isolated MCP server (`mcp/rag-manager`) lets an assistant propose and — only after human approval — write new knowledge. Read [docs/overview.md](docs/overview.md) for the full picture before making changes.
+Generic RAG knowledge base builder managed through an MCP server, with a strict split between the two components:
+
+- **Chat app (`app/`)** is a **read-only** viewer for testing retrieval and answering questions from the approved knowledge base. It must never create, edit, approve, reject, archive, or delete anything.
+- **MCP server (`mcp/rag-manager`)** is the **only** component authorized to manage the knowledge base, through a propose → human approval → write workflow.
+
+Read [docs/overview.md](docs/overview.md) and [docs/architecture.md](docs/architecture.md) for the full picture before making changes.
 
 ## Documentation index
 
@@ -25,7 +30,9 @@ Load only what's relevant to your current task:
 
 ## Non-negotiable rules
 
+- Never add a write path (create, edit, approve, reject, archive, delete) to the chat app (`app/`, `lib/`). It reads `APPROVED` data only — see [docs/architecture.md](docs/architecture.md).
 - Never let an MCP write path skip `propose_source_insert` → human approval → `PENDING_REVIEW`. Nothing reaches `APPROVED` without an explicit `approve_chunk` call.
+- Never let a harness rule (`HarnessRule`) grant a capability the code doesn't already enforce. Hardcoded identity/read-only rules always render before and win over harness config — see [docs/rag.md](docs/rag.md#the-harness-capabilities-and-restrictions). Keep `lib/rag/harness.ts`'s hardcoded blocklist; don't replace it with prompt-only guidance.
 - Never add or restore domain-specific fields (e.g. legal/medical-only vocabulary) to the shared schema — use `category`/`domain`/`tags`/`metadata`.
 - Never deploy, push, or provision hosted infrastructure unless explicitly asked in the moment.
 
