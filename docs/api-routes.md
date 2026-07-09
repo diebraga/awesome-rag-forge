@@ -71,6 +71,78 @@ The full "RAG awareness" bundle — the same thing `/api/chat` uses internally �
 
 See `app/api/rag/context/route.ts`.
 
+## `GET /api/rag/collections`
+
+Read-only, `APPROVED`-only list of collections for the [Collections page](#the-collections-pages) — one entry per collection that has at least one `APPROVED` document:
+
+```json
+{
+  "ok": true,
+  "collections": [
+    {
+      "id": "rag_collection_sample",
+      "name": "RAG Builder Documentation",
+      "description": "Sample collection...",
+      "category": "documentation",
+      "domain": "product",
+      "tags": ["seed", "docs"],
+      "approvedDocumentCount": 1,
+      "approvedChunkCount": 3
+    }
+  ]
+}
+```
+
+`approvedChunkCount` is a rough "how much is actually in here" signal, since a document can be `APPROVED` while some of its chunks aren't.
+
+See `lib/rag/collections.ts` and `app/api/rag/collections/route.ts`.
+
+## `GET /api/rag/collections/[collectionId]`
+
+Read-only, `APPROVED`-only, paginated detail for one collection — its documents and each document's `APPROVED` chunks. Query params: `page` (default `1`), `pageSize` (default `10`, max `50`).
+
+```json
+{
+  "ok": true,
+  "collection": { "id": "...", "name": "...", "description": "...", "category": "...", "domain": "...", "tags": [] },
+  "documents": [
+    { "id": "...", "title": "...", "category": "...", "domain": "...", "tags": [], "sourceType": "MARKDOWN", "chunks": [{ "id": "...", "chunkText": "...", "sectionTitle": "...", "chunkIndex": 0 }] }
+  ],
+  "page": 1,
+  "pageSize": 10,
+  "totalDocuments": 1,
+  "totalPages": 1
+}
+```
+
+Returns `404` if the collection doesn't exist. See `lib/rag/collections.ts` and `app/api/rag/collections/[collectionId]/route.ts`.
+
+### The Collections pages
+
+`app/collections/page.tsx` (a plain list) and `app/collections/[collectionId]/page.tsx` (paginated documents, expandable to their chunks) are part of the same read-only, end-user-facing surface as the chat — same `APPROVED`-only visibility, no write path. Showing collection/document names here is a **deliberate, explicit feature**, not a contradiction of the chat's restriction against narrating its own structure in conversation: that restriction governs the chat's natural-language behavior (`lib/rag/chat-context.ts`), not this dedicated browsing view. See [System Architecture](architecture.md#two-audiences-kept-apart-on-purpose) and [Security Considerations](security.md).
+
+There is intentionally no graph/visualization layer here — an earlier version rendered collections as a node graph (`@xyflow/react`), but with a small number of collections a plain list is clearer and has no dependency to maintain. If the knowledge base grows enough that a visual overview becomes useful again, revisit that decision rather than assuming a list won't scale.
+
+## `GET /api/rag/harness`
+
+Read-only: the chat's identity and its `APPROVED` capabilities/restrictions, without the retrieval call `GET /api/rag/context` also makes — backs the [Harness page](#the-harness-page).
+
+```json
+{
+  "ok": true,
+  "name": "Archivist",
+  "instructions": null,
+  "capabilities": ["Search and answer questions using the approved knowledge base.", "..."],
+  "restrictions": ["Cannot create, edit, approve, reject, archive, or delete knowledge.", "..."]
+}
+```
+
+See `lib/rag/chat-context.ts` (`getAssistantConfig`), `lib/rag/harness.ts` (`getApprovedHarnessRules`), and `app/api/rag/harness/route.ts`.
+
+### The Harness page
+
+`app/harness/page.tsx` shows the same identity and `APPROVED` capabilities/restrictions that are baked into the chat's system prompt — as a simple list, since there's nothing structural to visualize here. Same audience and visibility rules as the chat and the Collections pages: read-only, `APPROVED`-only. Changing any of this only ever happens through the MCP server's `propose_harness_update` → `approve_harness_update` → `approve_harness_rule`/`reject_harness_rule` flow (see [MCP Server](mcp-server.md#harness-rules-propose--approve--review)) — nothing on this page is editable.
+
 ## `GET /api/ollama/status`
 
 Checks whether Ollama is reachable at `OLLAMA_URL` and whether the configured `OLLAMA_MODEL` is pulled. Used by the chat UI to show a connection indicator and to gate the message input until a model is actually available.

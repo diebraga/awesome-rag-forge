@@ -184,13 +184,13 @@ export default function Home() {
   const chatDisabled = isLoading || connectionState !== "connected";
 
   return (
-    <main className="min-h-screen bg-white px-4 py-12 text-black">
-      <section className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-        <header className="space-y-2">
+    <main className="flex h-full flex-col bg-white px-4 py-6 text-black">
+      <section className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col gap-4">
+        <header className="shrink-0 space-y-1.5">
           <p className="text-xs font-medium tracking-wide text-blue-600">
             Read-only knowledge base viewer
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight text-black">
+          <h1 className="text-xl font-semibold tracking-tight text-black">
             Test your RAG knowledge base
           </h1>
           <p className="text-sm leading-6 text-black/60">
@@ -202,7 +202,7 @@ export default function Home() {
           </p>
         </header>
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-black/10 px-4 py-3 text-sm">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-black/10 px-4 py-3 text-sm">
           <label className="sr-only" htmlFor="model">
             Model
           </label>
@@ -268,7 +268,7 @@ export default function Home() {
         </div>
 
         {connectError && (
-          <p className="-mt-3 text-xs text-black/50">
+          <p className="shrink-0 text-xs text-black/50">
             {connectError}
             {connectionState === "not-installed" && (
               <>
@@ -288,74 +288,72 @@ export default function Home() {
           </p>
         )}
         {!canAutoStart && connectionState !== "connected" && connectionState !== "checking" && (
-          <p className="-mt-3 text-xs text-black/50">
+          <p className="shrink-0 text-xs text-black/50">
             Auto-start isn&apos;t available for this configuration. Start Ollama
             yourself, then refresh this page.
           </p>
         )}
 
-        <div className="flex flex-col gap-4">
-          <ScrollArea className="h-[480px]">
-            <div className="space-y-4 py-1">
-              {messages.map((message) => (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-4 py-1 pr-2">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex items-end gap-3 ${
+                  message.role === "user" ? "justify-end" : "justify-start"
+                }`}
+              >
+                {message.role === "bot" && <PersonAvatar />}
                 <div
-                  key={message.id}
-                  className={`flex items-end gap-3 ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
+                  className={
+                    message.role === "user"
+                      ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground"
+                      : "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"
+                  }
                 >
-                  {message.role === "bot" && <PersonAvatar />}
-                  <div
-                    className={
-                      message.role === "user"
-                        ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground"
-                        : "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"
-                    }
-                  >
-                    {message.text}
-                  </div>
-                  {message.role === "user" && <PersonAvatar />}
+                  {message.text}
                 </div>
-              ))}
-              {isLoading && (
-                <div className="flex items-end gap-3">
-                  <PersonAvatar />
-                  <div className="max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
-                    Thinking...
-                  </div>
+                {message.role === "user" && <PersonAvatar />}
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex items-end gap-3">
+                <PersonAvatar />
+                <div className="max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
+                  Thinking...
                 </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-          </ScrollArea>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </ScrollArea>
 
-          <form onSubmit={handleSubmit} className="flex w-full gap-3">
-            <label className="sr-only" htmlFor="message">
-              Message
-            </label>
-            <Input
-              id="message"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder={
-                connectionState === "connected"
-                  ? "Ask a question..."
-                  : "Connect to Ollama to start chatting"
-              }
-              className="h-12 flex-1 rounded-xl bg-white px-4"
-              disabled={chatDisabled}
-            />
-            <Button
-              type="submit"
-              size="lg"
-              className="h-12 rounded-xl px-5"
-              disabled={chatDisabled}
-            >
-              {isLoading ? "Wait" : "Send"}
-              <SendHorizontal data-icon="inline-end" className="size-4" />
-            </Button>
-          </form>
-        </div>
+        <form onSubmit={handleSubmit} className="flex w-full shrink-0 gap-3">
+          <label className="sr-only" htmlFor="message">
+            Message
+          </label>
+          <Input
+            id="message"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={
+              connectionState === "connected"
+                ? "Ask a question..."
+                : "Connect to Ollama to start chatting"
+            }
+            className="h-12 flex-1 rounded-xl bg-white px-4"
+            disabled={chatDisabled}
+          />
+          <Button
+            type="submit"
+            size="lg"
+            className="h-12 rounded-xl px-5"
+            disabled={chatDisabled}
+          >
+            {isLoading ? "Wait" : "Send"}
+            <SendHorizontal data-icon="inline-end" className="size-4" />
+          </Button>
+        </form>
       </section>
     </main>
   );

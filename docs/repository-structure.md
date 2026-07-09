@@ -2,15 +2,24 @@
 
 ```text
 app/
-  page.tsx                Chat UI (client component)
-  layout.tsx              Root layout and page metadata
+  page.tsx                Chat UI (client component), fills the viewport height —
+                           only its message list scrolls, never the page
+  layout.tsx              Root layout: fixed-height (h-dvh) shell wrapping Header + page content
+  collections/page.tsx      Plain read-only list of APPROVED collections
+  collections/[collectionId]/page.tsx  Paginated, expandable document/chunk view for one collection
+  harness/page.tsx          Read-only view of the chat's identity + APPROVED capabilities/restrictions
   api/chat/route.ts        Chat endpoint: calls Ollama with the full assistant context
   api/rag/route.ts         Debug endpoint: returns the current approved RAG context
   api/rag/context/route.ts  Full awareness bundle for external agents (identity, harness, stats, context)
+  api/rag/collections/route.ts  Read-only, APPROVED-only collection list for the Collections page
+  api/rag/collections/[collectionId]/route.ts  Read-only, APPROVED-only, paginated collection detail
+  api/rag/harness/route.ts   Read-only identity + APPROVED capabilities/restrictions for the Harness page
   api/ollama/status/route.ts Checks whether Ollama is reachable and the model is pulled
   api/ollama/start/route.ts  Local-only: starts Ollama for the "Connect" button
 
-components/ui/           shadcn UI primitives (Button, Input, Avatar, ScrollArea, Separator)
+components/
+  header.tsx               Minimal top nav: Chat / Collections / Harness links
+  ui/                       shadcn UI primitives (Button, Input, Avatar, ScrollArea, Separator)
 components.json           shadcn configuration
 
 lib/
@@ -22,6 +31,10 @@ lib/
     harness.ts                shared, capability-neutral: rule validation and
                               data access only, used identically by the chat
                               and the MCP server, so rules can't drift
+    collections.ts              listApprovedCollections() / getCollectionDetail() — read-only,
+                              APPROVED-only data for the Collections pages. The
+                              Harness page reuses getAssistantConfig() (chat-context.ts)
+                              and getApprovedHarnessRules() (harness.ts) directly instead.
   prisma.ts               Prisma client for the Next.js app (server-only)
   storage.ts               Gates document-attachment features behind storage env vars
   ollama.ts                 Ollama connection config + local-only auto-start logic

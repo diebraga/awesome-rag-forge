@@ -46,6 +46,14 @@ lib/rag/
 
 If you're adding a capability, ask which audience it's for before deciding where it goes: information for the knowledge base's creator belongs in an MCP tool; behavior for the person testing/using the chat belongs in `lib/rag/chat-context.ts`. Don't let the two mix.
 
+**The Collections pages (`app/collections/`) are a third case, not an exception.** They're a plain, `APPROVED`-only browsing view of collections/documents/chunks — part of the same read-only, end-user-facing surface as the chat, backed by their own read-only module (`lib/rag/collections.ts`) rather than `chat-context.ts`. They deliberately *do* show collection/document names — that's the point of the feature — which is not a contradiction of the chat's "never narrate structure" rule, because that rule is about the chat's conversational behavior specifically, not about every read-only surface in `app/`. Both stay within the same boundary that matters: `APPROVED`-only, no write path.
+
+An earlier version of this feature rendered collections as a node graph (`@xyflow/react`). It was removed in favor of a plain list once it became clear a graph adds no value with only a handful of collections — don't re-add graph/visualization complexity without a concrete reason (e.g. the knowledge base growing large enough that a visual overview earns its keep, or real embedding-based clustering — see [RAG Architecture](rag.md)).
+
+**The Harness page (`app/harness/`) is the same pattern applied to identity/harness data instead of knowledge.** It reads `getAssistantConfig()` (from `chat-context.ts`) and `getApprovedHarnessRules()` (from `harness.ts`) directly and renders them as a plain list — no graph, since there's no structure to visualize, just a handful of strings. Same audience, same `APPROVED`-only rule, same "read-only, no write path" boundary as everything else in `app/`.
+
+Deliberately excluded from both pages: `RagReview` (approval/rejection audit trail), `RagFeedback` (user-submitted ratings/comments that were never reviewed for display), and `RagEvalCase` (testing artifacts). Those are creator/operational concerns — if you ever build a view for them, it belongs behind the MCP server's tools (`list_pending_reviews`, etc.), not on this read-only, end-user-facing surface.
+
 ## Chat path (read-only)
 
 ```text
