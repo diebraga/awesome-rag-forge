@@ -6,6 +6,7 @@ export type ProposedChunk = {
   chunkText: string;
   sectionTitle?: string;
   tokenCount: number;
+  pageNumber?: number;
 };
 
 function estimateTokens(text: string) {
@@ -69,4 +70,58 @@ export function chunkSourceText(sourceText: string): ProposedChunk[] {
           tokenCount: estimateTokens(sourceText),
         },
       ];
+}
+
+export type ExtractedPageInput = {
+  pageNumber: number;
+  text: string;
+};
+
+// Chunks per-page PDF text while keeping pageNumber on every chunk, so
+// citations can point at the exact page instead of just the document.
+// A page longer than MAX_CHUNK_CHARS is split like chunkSourceText does;
+// short pages are kept as their own chunk rather than merged across page
+// boundaries, since the page number would otherwise become ambiguous.
+export function chunkPdfPages(pages: ExtractedPageInput[]): ProposedChunk[] {
+  const chunks: ProposedChunk[] = [];
+
+  for (const page of pages) {
+    const text = page.text.trim();
+    if (!text) continue;
+
+    const paragraphs = text
+      .replace(/\r\n/g, "\n")
+      .split(/\n{2,}/)
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+
+    let current = "";
+    for (const paragraph of paragraphs.length > 0 ? paragraphs : [text]) {
+      const next = current ? `${current}\n\n${paragraph}` : paragraph;
+      if (next.length > MAX_CHUNK_CHARS && current) {
+        chunks.push({
+          chunkIndex: chunks.length,
+          chunkText: current,
+          sectionTitle: maybeSectionTitle(current),
+          tokenCount: estimateTokens(current),
+          pageNumber: page.pageNumber,
+        });
+        current = paragraph;
+      } else {
+        current = next;
+      }
+    }
+
+    if (current) {
+      chunks.push({
+        chunkIndex: chunks.length,
+        chunkText: current,
+        sectionTitle: maybeSectionTitle(current),
+        tokenCount: estimateTokens(current),
+        pageNumber: page.pageNumber,
+      });
+    }
+  }
+
+  return chunks;
 }

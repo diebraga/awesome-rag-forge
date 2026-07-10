@@ -3,14 +3,29 @@ import { spawn } from "node:child_process";
 export const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct";
 
-// Only one model is wired up today. This is an array so the UI can render a
-// dropdown and so adding more models later doesn't require a UI rewrite.
-export const AVAILABLE_MODELS = [OLLAMA_MODEL];
+// A small curated set of general-purpose instruction-following models to
+// try locally. Always includes OLLAMA_MODEL (the configured default) even
+// if it's a custom value. This is a fixed allowlist — the chat route and
+// the pull endpoint both validate any client-supplied model name against
+// it, so a request can never make the server fetch or run an arbitrary
+// model name.
+const CURATED_MODELS = [
+  "qwen2.5:7b-instruct",
+  "llama3.1:8b",
+  "mistral:7b-instruct",
+  "gemma2:9b",
+  "phi3.5",
+];
+
+export const AVAILABLE_MODELS = Array.from(new Set([OLLAMA_MODEL, ...CURATED_MODELS]));
+
+export function isKnownModel(model: string): boolean {
+  return AVAILABLE_MODELS.includes(model);
+}
 
 export type OllamaStatus = {
   running: boolean;
-  modelAvailable: boolean;
-  modelName: string;
+  installedModels: string[];
   availableModels: string[];
   canAutoStart: boolean;
 };
@@ -25,18 +40,18 @@ export function isLocalOllamaUrl(url: string = OLLAMA_URL) {
 }
 
 /**
- * Whether this server process is allowed to try launching Ollama itself.
- * Deliberately conservative: only ever true for a local OLLAMA_URL outside
- * production, so a deployed instance can never be tricked into spawning a
- * process on its host machine via this endpoint.
+ * Whether this server process is allowed to try launching Ollama itself, or
+ * pulling a model into it. Deliberately conservative: only ever true for a
+ * local OLLAMA_URL outside production, so a deployed instance can never be
+ * tricked into spawning a process or downloading a multi-gigabyte model on
+ * its host machine via a visitor's request.
  */
 export function canAutoStartOllama() {
   return process.env.NODE_ENV !== "production" && isLocalOllamaUrl();
 }
 
 export async function getOllamaStatus(): Promise<OllamaStatus> {
-  const base: Omit<OllamaStatus, "running" | "modelAvailable"> = {
-    modelName: OLLAMA_MODEL,
+  const base: Omit<OllamaStatus, "running" | "installedModels"> = {
     availableModels: AVAILABLE_MODELS,
     canAutoStart: canAutoStartOllama(),
   };
@@ -47,16 +62,17 @@ export async function getOllamaStatus(): Promise<OllamaStatus> {
     });
 
     if (!response.ok) {
-      return { ...base, running: false, modelAvailable: false };
+      return { ...base, running: false, installedModels: [] };
     }
 
     const data = (await response.json()) as { models?: Array<{ name?: string }> };
-    const modelAvailable =
-      data.models?.some((model) => model.name === OLLAMA_MODEL) ?? false;
+    const installedModels = (data.models ?? [])
+      .map((model) => model.name)
+      .filter((name): name is string => Boolean(name));
 
-    return { ...base, running: true, modelAvailable };
+    return { ...base, running: true, installedModels };
   } catch {
-    return { ...base, running: false, modelAvailable: false };
+    return { ...base, running: false, installedModels: [] };
   }
 }
 

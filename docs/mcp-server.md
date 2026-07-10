@@ -21,8 +21,10 @@ This starts the server on stdio transport, which is how local MCP clients (Claud
 | `propose_source_insert` | **No** | Analyze source text and propose collection/document/chunk plan. |
 | `approve_source_insert` | Yes (if approved) | Persist a proposal, but only when `userApproval: true`. |
 | `attach_document_file` | Yes (if storage configured and approved) | Record a `storageKey` for an original file; refuses if storage env vars are missing or `userApproval` isn't `true`. |
+| `propose_file_upload` | **No** | Extract text from an uploaded PDF (OCR fallback for scanned pages) and propose a document/chunk plan. Does not upload anything to storage. |
+| `approve_file_upload` | Yes (if approved) | Persist the proposal's document/chunks as `PENDING_REVIEW`, only when `userApproval: true`. Also uploads the original file to storage — requiring storage to be configured — only when `storeOriginalFile: true`; the caller must have asked the user which mode they want. |
 | `list_pending_reviews` | No | List documents/chunks awaiting review. |
-| `approve_chunk` | Yes | Mark a chunk `APPROVED` and log a review. |
+| `approve_chunk` | Yes | Mark a chunk `APPROVED`, flip its parent document to `APPROVED` too (so it actually becomes visible to the chat/download route), and log a review. |
 | `reject_chunk` | Yes | Mark a chunk `REJECTED` and log a review. |
 | `add_feedback` | Yes | Record feedback on an answer or chunk. |
 | `create_eval_case` | Yes | Record a test question for future evaluation. |
@@ -56,6 +58,16 @@ A proposal includes:
 instead of silently storing anything. It is fine to store extracted text in the database without storage configured — only original file bytes require it. This repo does not include a bucket client implementation; wire one into `lib/storage.ts` for your provider of choice (S3, R2, GCS, etc.) before enabling uploads.
 
 It also requires `userApproval: true` — it can modify an already-`APPROVED`, live document, so show the user which document/file before calling it. And it merges into the document's existing `metadata` instead of overwriting the field, so attaching a file never silently destroys metadata set during ingestion (e.g. `insertedBy`, `warnings`).
+
+## Uploading a file directly: `propose_file_upload` → `approve_file_upload`
+
+For the common case of "here's a PDF, extract its knowledge and (maybe) keep the original for download," `propose_file_upload`/`approve_file_upload` combine what `propose_source_insert`/`approve_source_insert`/`attach_document_file` would otherwise require several separate calls to do:
+
+1. `propose_file_upload` — takes `fileName` and `fileBase64` (the whole file, base64-encoded; capped at ~15MB of raw file data since it round-trips through the calling model's context on both the propose and approve calls). It validates the `%PDF` magic bytes, extracts text page-by-page via [`mcp/rag-manager/extraction.ts`](../mcp/rag-manager/extraction.ts) (`pdf-parse`'s text layer first; any page with almost no extractable text — likely scanned/photographed — is rasterized and run through `tesseract.js` OCR instead), then builds a page-numbered chunk plan via `chunkPdfPages()` in [`chunking.ts`](../mcp/rag-manager/chunking.ts). Read-only: no database write, no storage upload. The proposal's warnings call out how many pages needed OCR, so a reviewer knows to double-check accuracy there.
+2. **Before calling `approve_file_upload`, the calling assistant must always ask the user to choose between two modes** — this is stated directly in `propose_file_upload`'s tool description and its `requiredUserQuestion`, not left to inference: extract text only (nothing enters the storage bucket, no storage configuration needed at all), or also store the original file for later download. Never assume one or the other, even if storage happens to be configured.
+3. `approve_file_upload` — takes the same proposal back plus `fileName`/`fileBase64` again (the actual bytes have to be resupplied; the DB proposal alone doesn't carry binary data), the user's `storeOriginalFile` choice from step 2, and `userApproval: true`. When `storeOriginalFile: true`, it refuses exactly like `attach_document_file` if storage isn't configured, then uploads the file under a generated key and sets `storageKey` on the document. When `storeOriginalFile: false`, it skips storage entirely — no upload, `storageKey` stays `null`, and it works with no storage env vars configured at all. Either way, the collection/document/chunks/sources are created in one transaction, all `PENDING_REVIEW` until a human runs `approve_chunk` on the resulting chunks.
+
+Every `RagChunk`/`RagSource` created this way carries a `pageNumber`, so citations and future review UIs can point at the exact page rather than just the document as a whole. `RagDocument.metadata.fileStored` records which mode was used.
 
 ## Assistant identity: `set_assistant_name`
 
@@ -98,6 +110,7 @@ Add an entry pointing at this repo's checkout, for example (Claude Desktop `clau
 
 - "Show me my current knowledge base."
 - "Add this source to the knowledge base." (paste text)
+- "Upload this PDF to the knowledge base." (with a file attached)
 - "Search what we know about onboarding."
 - "Approve this pending chunk."
 - "Create an eval case for [question]."

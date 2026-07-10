@@ -1,33 +1,34 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { SendHorizontal, User } from "lucide-react";
+import { Download, SendHorizontal, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+type ChatSource = {
+  documentId: string;
+  title: string;
+  downloadable: boolean;
+};
 
 type ChatMessage = {
   id: number;
   role: "bot" | "user";
   text: string;
+  sources?: ChatSource[];
 };
 
 type OllamaStatusResponse = {
   ok: boolean;
   running: boolean;
-  modelAvailable: boolean;
-  modelName: string;
+  installedModels: string[];
   availableModels: string[];
   canAutoStart: boolean;
 };
 
-type ConnectionState =
-  | "checking"
-  | "connected"
-  | "disconnected"
-  | "starting"
-  | "not-installed"
-  | "model-missing";
+type ServerStatus = "checking" | "connected" | "disconnected" | "starting" | "not-installed";
+type PullState = "idle" | "pulling" | "error";
 
 const initialMessages: ChatMessage[] = [
   {
@@ -36,6 +37,15 @@ const initialMessages: ChatMessage[] = [
     text: "Hi. I am connected to a local model and an approved RAG knowledge base. Ask a question and I will answer using retrieved context when it is available.",
   },
 ];
+
+function describePullStatus(status: string): string {
+  const normalized = status.toLowerCase();
+  if (normalized.includes("verifying")) return "Verifying download";
+  if (normalized.includes("writing manifest")) return "Finalizing";
+  if (normalized.includes("removing")) return "Cleaning up";
+  if (normalized === "success") return "Finishing up";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
 
 function PersonAvatar() {
   return (
@@ -51,11 +61,18 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [connectionState, setConnectionState] = useState<ConnectionState>("checking");
-  const [modelName, setModelName] = useState("");
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("checking");
+  const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
   const [canAutoStart, setCanAutoStart] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+
+  const [pullState, setPullState] = useState<PullState>("idle");
+  const [pullProgress, setPullProgress] = useState<number | null>(null);
+  const [pullPhase, setPullPhase] = useState<"downloading" | "finalizing">("downloading");
+  const [pullStatusText, setPullStatusText] = useState<string | null>(null);
+  const [pullError, setPullError] = useState<string | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -65,20 +82,14 @@ export default function Home() {
     try {
       const response = await fetch("/api/ollama/status");
       const data = (await response.json()) as OllamaStatusResponse;
-      setModelName(data.modelName);
+      setInstalledModels(data.installedModels ?? []);
       setAvailableModels(data.availableModels ?? []);
       setCanAutoStart(data.canAutoStart);
-
-      if (!data.running) {
-        setConnectionState("disconnected");
-      } else if (!data.modelAvailable) {
-        setConnectionState("model-missing");
-      } else {
-        setConnectionState("connected");
-      }
+      setSelectedModel((current) => current || data.availableModels?.[0] || "");
+      setServerStatus(data.running ? "connected" : "disconnected");
       return data;
     } catch {
-      setConnectionState("disconnected");
+      setServerStatus("disconnected");
       return null;
     }
   }
@@ -89,7 +100,7 @@ export default function Home() {
 
   async function handleConnect() {
     setConnectError(null);
-    setConnectionState("starting");
+    setServerStatus("starting");
 
     try {
       const response = await fetch("/api/ollama/start", { method: "POST" });
@@ -97,16 +108,14 @@ export default function Home() {
 
       if (!data.ok) {
         setConnectError(data.error ?? "Unable to start Ollama.");
-        setConnectionState(
-          data.error?.toLowerCase().includes("not installed")
-            ? "not-installed"
-            : "disconnected",
+        setServerStatus(
+          data.error?.toLowerCase().includes("not installed") ? "not-installed" : "disconnected",
         );
         return;
       }
     } catch {
       setConnectError("Unable to reach the server to start Ollama.");
-      setConnectionState("disconnected");
+      setServerStatus("disconnected");
       return;
     }
 
@@ -119,14 +128,88 @@ export default function Home() {
     setConnectError(
       "Ollama did not respond in time. It may still be starting — try Connect again in a moment.",
     );
-    setConnectionState("disconnected");
+    setServerStatus("disconnected");
+  }
+
+  async function handleDownloadModel() {
+    if (!selectedModel) return;
+    setPullState("pulling");
+    setPullError(null);
+    setPullProgress(null);
+    setPullPhase("downloading");
+    setPullStatusText(null);
+
+    try {
+      const response = await fetch("/api/ollama/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedModel }),
+      });
+
+      if (!response.ok || !response.body) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setPullError(data?.error ?? "Unable to start the download.");
+        setPullState("error");
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line) as {
+              status?: string;
+              error?: string;
+              completed?: number;
+              total?: number;
+            };
+            if (event.error) {
+              setPullError(event.error);
+              setPullState("error");
+              return;
+            }
+            if (event.total && event.completed) {
+              setPullPhase("downloading");
+              setPullProgress(Math.round((event.completed / event.total) * 100));
+            } else if (event.status) {
+              // Byte progress has stopped arriving — Ollama has moved on to
+              // verifying/writing the manifest. Show that instead of
+              // leaving a stale percentage on screen with no explanation.
+              setPullPhase("finalizing");
+              setPullStatusText(event.status);
+            }
+          } catch {
+            // Ignore a malformed/partial line — the next chunk will complete it.
+          }
+        }
+      }
+
+      setPullState("idle");
+      setPullProgress(null);
+      await checkOllamaStatus();
+    } catch {
+      setPullError("Download interrupted. Try again.");
+      setPullState("error");
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const question = input.trim();
-    if (!question || isLoading || connectionState !== "connected") return;
+    const modelReady = installedModels.includes(selectedModel);
+    if (!question || isLoading || serverStatus !== "connected" || !modelReady) return;
 
     const userMessage: ChatMessage = {
       id: Date.now(),
@@ -145,12 +228,13 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ messages: nextMessages }),
+        body: JSON.stringify({ messages: nextMessages, model: selectedModel }),
       });
 
       const data = (await response.json()) as {
         reply?: string;
         error?: string;
+        sources?: ChatSource[];
       };
 
       setMessages((currentMessages) => [
@@ -162,8 +246,15 @@ export default function Home() {
             data.reply ??
             data.error ??
             "The local model did not return a response.",
+          sources: data.reply ? data.sources : undefined,
         },
       ]);
+
+      if (!response.ok) {
+        // The backend couldn't reach Ollama — re-check so the status strip
+        // reflects reality instead of still claiming "Connected."
+        checkOllamaStatus();
+      }
     } catch (error) {
       setMessages((currentMessages) => [
         ...currentMessages,
@@ -176,12 +267,14 @@ export default function Home() {
               : "Unable to reach the local model.",
         },
       ]);
+      checkOllamaStatus();
     } finally {
       setIsLoading(false);
     }
   }
 
-  const chatDisabled = isLoading || connectionState !== "connected";
+  const modelReady = installedModels.includes(selectedModel);
+  const chatDisabled = isLoading || serverStatus !== "connected" || !modelReady;
 
   return (
     <main className="flex h-full flex-col bg-white px-4 py-6 text-black">
@@ -208,61 +301,75 @@ export default function Home() {
           </label>
           <select
             id="model"
-            value={modelName}
-            disabled={availableModels.length <= 1}
-            onChange={(event) => setModelName(event.target.value)}
+            value={selectedModel}
+            disabled={availableModels.length === 0 || pullState === "pulling"}
+            onChange={(event) => setSelectedModel(event.target.value)}
             className="h-9 rounded-lg border border-black/10 bg-white px-2 text-sm text-black disabled:opacity-70"
           >
-            {(availableModels.length > 0 ? availableModels : [modelName])
-              .filter(Boolean)
-              .map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
+            {availableModels.map((model) => (
+              <option key={model} value={model}>
+                {model}
+                {installedModels.includes(model) ? "" : " (not downloaded)"}
+              </option>
+            ))}
           </select>
 
           <div className="flex flex-1 items-center gap-2">
-            {connectionState === "checking" && (
+            {serverStatus === "checking" && (
               <span className="text-black/50">Checking Ollama...</span>
             )}
-            {connectionState === "connected" && (
+            {serverStatus === "connected" && modelReady && (
               <span className="text-blue-600">Connected to Ollama</span>
             )}
-            {connectionState === "model-missing" && (
+            {serverStatus === "connected" && !modelReady && pullState !== "pulling" && (
               <span className="text-black/60">
-                Ollama is running, but{" "}
-                <code className="rounded bg-black/5 px-1 py-0.5">{modelName}</code>{" "}
-                isn&apos;t pulled yet. Run{" "}
-                <code className="rounded bg-black/5 px-1 py-0.5">
-                  ollama pull {modelName}
-                </code>
-                , then reconnect.
+                <code className="rounded bg-black/5 px-1 py-0.5">{selectedModel}</code>{" "}
+                isn&apos;t downloaded yet.
               </span>
             )}
-            {(connectionState === "disconnected" ||
-              connectionState === "not-installed" ||
-              connectionState === "starting") && (
+            {serverStatus === "connected" && pullState === "pulling" && (
+              <span className="text-black/60">
+                {pullPhase === "downloading"
+                  ? `Downloading ${selectedModel}${pullProgress !== null ? ` — ${pullProgress}%` : "..."}`
+                  : `${selectedModel}: ${pullStatusText ? describePullStatus(pullStatusText) : "Finalizing"}...`}
+              </span>
+            )}
+            {(serverStatus === "disconnected" ||
+              serverStatus === "not-installed" ||
+              serverStatus === "starting") && (
               <span className="text-black/50">
-                {connectionState === "starting"
+                {serverStatus === "starting"
                   ? "Starting Ollama..."
-                  : connectionState === "not-installed"
+                  : serverStatus === "not-installed"
                     ? "Ollama isn't installed on this machine."
                     : "Ollama isn't running."}
               </span>
             )}
           </div>
 
-          {connectionState !== "connected" && connectionState !== "checking" && (
+          {serverStatus !== "connected" && serverStatus !== "checking" && (
             <Button
               type="button"
               size="sm"
               variant="outline"
               className="rounded-lg"
-              disabled={connectionState === "starting" || !canAutoStart}
+              disabled={serverStatus === "starting" || !canAutoStart}
               onClick={handleConnect}
             >
-              {connectionState === "starting" ? "Connecting..." : "Connect to Ollama"}
+              {serverStatus === "starting" ? "Connecting..." : "Connect to Ollama"}
+            </Button>
+          )}
+
+          {serverStatus === "connected" && !modelReady && canAutoStart && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-lg"
+              disabled={pullState === "pulling"}
+              onClick={handleDownloadModel}
+            >
+              {pullState === "pulling" ? "Downloading..." : "Download model"}
             </Button>
           )}
         </div>
@@ -270,7 +377,7 @@ export default function Home() {
         {connectError && (
           <p className="shrink-0 text-xs text-black/50">
             {connectError}
-            {connectionState === "not-installed" && (
+            {serverStatus === "not-installed" && (
               <>
                 {" "}
                 Get it from{" "}
@@ -287,9 +394,17 @@ export default function Home() {
             )}
           </p>
         )}
-        {!canAutoStart && connectionState !== "connected" && connectionState !== "checking" && (
+        {pullError && <p className="shrink-0 text-xs text-black/50">{pullError}</p>}
+        {!canAutoStart && serverStatus !== "connected" && serverStatus !== "checking" && (
           <p className="shrink-0 text-xs text-black/50">
             Auto-start isn&apos;t available for this configuration. Start Ollama
+            yourself, then refresh this page.
+          </p>
+        )}
+        {serverStatus === "connected" && !modelReady && !canAutoStart && (
+          <p className="shrink-0 text-xs text-black/50">
+            Auto-download isn&apos;t available for this configuration. Run{" "}
+            <code className="rounded bg-black/5 px-1 py-0.5">ollama pull {selectedModel}</code>{" "}
             yourself, then refresh this page.
           </p>
         )}
@@ -312,6 +427,24 @@ export default function Home() {
                   }
                 >
                   {message.text}
+                  {message.sources?.some((source) => source.downloadable) && (
+                    <div className="mt-2 flex flex-wrap gap-2 whitespace-normal">
+                      {message.sources
+                        .filter((source) => source.downloadable)
+                        .map((source) => (
+                          <a
+                            key={source.documentId}
+                            href={`/api/rag/documents/${source.documentId}/download`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50"
+                          >
+                            <Download className="size-3" />
+                            {source.title}
+                          </a>
+                        ))}
+                    </div>
+                  )}
                 </div>
                 {message.role === "user" && <PersonAvatar />}
               </div>
@@ -337,9 +470,11 @@ export default function Home() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder={
-              connectionState === "connected"
+              serverStatus === "connected" && modelReady
                 ? "Ask a question..."
-                : "Connect to Ollama to start chatting"
+                : serverStatus === "connected"
+                  ? "Download the selected model to start chatting"
+                  : "Connect to Ollama to start chatting"
             }
             className="h-12 flex-1 rounded-xl bg-white px-4"
             disabled={chatDisabled}

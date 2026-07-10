@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
 
+export type RagCitation = {
+  documentId: string;
+  title: string;
+  downloadable: boolean;
+};
+
 export async function getRagContext() {
   const chunks = await prisma.ragChunk.findMany({
     where: {
@@ -13,9 +19,11 @@ export async function getRagContext() {
       sectionTitle: true,
       document: {
         select: {
+          id: true,
           title: true,
           category: true,
           domain: true,
+          storageKey: true,
         },
       },
       sources: {
@@ -31,7 +39,7 @@ export async function getRagContext() {
     take: 5,
   });
 
-  return chunks.map((chunk, index) => {
+  const promptBlocks = chunks.map((chunk, index) => {
     const source = chunk.sources[0];
     return [
       `Source ${index + 1}: ${source?.label ?? chunk.document.title}`,
@@ -45,4 +53,18 @@ export async function getRagContext() {
       .filter(Boolean)
       .join("\n");
   });
+
+  const citations: RagCitation[] = [];
+  const seenDocumentIds = new Set<string>();
+  for (const chunk of chunks) {
+    if (seenDocumentIds.has(chunk.document.id)) continue;
+    seenDocumentIds.add(chunk.document.id);
+    citations.push({
+      documentId: chunk.document.id,
+      title: chunk.document.title,
+      downloadable: chunk.document.storageKey !== null,
+    });
+  }
+
+  return { promptBlocks, citations };
 }

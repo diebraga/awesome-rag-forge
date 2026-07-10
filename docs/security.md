@@ -8,6 +8,8 @@ The MCP server never writes new knowledge without an explicit approval step (`pr
 
 `RagChunk.status` and `RagDocument.status` should only move to `APPROVED` through an explicit human-driven review action (`approve_chunk`, or manual review tooling you build later). Do not add logic that auto-approves based on heuristics, confidence scores, or model self-assessment.
 
+`approve_chunk` flipping `RagDocument.status` to `APPROVED` alongside the chunk it was called on is **not** an exception to this — it's still gated behind the same explicit, human-invoked `approve_chunk` call as the chunk itself; nothing decides on its own that a document is ready. Don't read "a document becomes APPROVED automatically when a chunk is approved" as license to add a scheduled job, heuristic, or bulk auto-approval path — the trigger must always be one human calling `approve_chunk` (or `reject_chunk`) on one chunk at a time.
+
 ## No secret logging
 
 - Never log `DATABASE_URL`, storage credentials, or full request/response bodies that might contain secrets.
@@ -20,7 +22,9 @@ Both `lib/prisma.ts` and `mcp/rag-manager/prisma.ts` are server-only. Never impo
 
 ## Storage gating
 
-Original file uploads are refused unless `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY` are all set (see `lib/storage.ts`). This prevents silently writing files to an unconfigured or default location. Extracted text may still be stored in the database without storage configured.
+Original file uploads (`attach_document_file`, `approve_file_upload`) are refused unless `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY` are all set (see `lib/storage.ts`). This prevents silently writing files to an unconfigured or default location. Extracted text may still be stored in the database without storage configured — only the original file bytes require it.
+
+The bucket itself should be kept private (no public-read policy). `lib/storage.ts`'s `getDownloadUrl()` generates a presigned `GetObject` URL that expires after 5 minutes, and `GET /api/rag/documents/[id]/download` is the only code path that calls it — gated to `status: APPROVED` documents with a non-null `storageKey`, same as every other read in `app/`. Never add a route or tool that returns a longer-lived or unauthenticated direct bucket URL; always go through `getDownloadUrl()` so the expiry and the APPROVED-only gate stay in one place.
 
 ## MCP server trust boundary
 
@@ -75,6 +79,15 @@ This route runs a fixed, hardcoded command (`ollama serve`, no user input reache
 - It never targets any machine other than the one the Next.js server process is already running on. There is no way to make it start Ollama "somewhere else."
 
 If you ever extend this pattern (e.g. supporting other model runtimes), keep both guardrails and never let request data influence the command that gets spawned.
+
+## `POST /api/ollama/pull` downloads a model — scoped the same way, plus an allowlist
+
+This route lets the chat UI's "Download model" button pull a model into Ollama. It's not a process spawn (it proxies an HTTP request to Ollama's own `/api/pull`), but it's still resource-consuming — bandwidth and disk, potentially several gigabytes — so it carries the same guardrails as `/api/ollama/start`, plus one more:
+
+- Same `canAutoStartOllama()` gate: local `OLLAMA_URL`, non-production. A deployed instance can never have a visitor's request trigger a multi-gigabyte download on the host.
+- The requested `model` must be one of the fixed `AVAILABLE_MODELS` in `lib/ollama.ts` — an arbitrary client-supplied model name is refused with a `400`, never forwarded to Ollama. This caps what can be downloaded to a small, reviewed list, regardless of how the gate above is configured.
+
+If you add more models to `AVAILABLE_MODELS`, that's the only place to do it — don't accept model names from request bodies without validating against it first.
 
 ## Automated PR security review
 

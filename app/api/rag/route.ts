@@ -3,11 +3,12 @@ import { getRagContext } from "@/lib/rag/retrieval";
 
 export async function GET() {
   try {
-    const context = await getRagContext();
+    const { promptBlocks, citations } = await getRagContext();
     return NextResponse.json({
       ok: true,
-      count: context.length,
-      context,
+      count: promptBlocks.length,
+      context: promptBlocks,
+      citations,
     });
   } catch (error) {
     return NextResponse.json(

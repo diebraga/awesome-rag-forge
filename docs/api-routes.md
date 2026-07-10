@@ -9,28 +9,40 @@ Accepts chat history and returns a model reply.
 Request body:
 
 ```json
-{ "messages": [{ "role": "user", "text": "..." }] }
+{ "messages": [{ "role": "user", "text": "..." }], "model": "llama3.1:8b" }
 ```
+
+`model` is optional and validated against the fixed `AVAILABLE_MODELS` allowlist in `lib/ollama.ts` — an unrecognized value silently falls back to `OLLAMA_MODEL`, it's never passed through to Ollama unchecked.
 
 Behavior:
 
-1. Calls `buildAssistantContext()` from [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) to get the assistant's identity/read-only/harness system prompt, knowledge-base scope stats, and retrieved RAG context.
-2. Calls Ollama's `/api/chat` with `stream: false`, using that system prompt.
-3. Returns `{ reply, model }` — `model` here is the assistant's configured **name** (e.g. `"Archivist"`), never the underlying model/provider string, so the real backend is not leaked through the API response either.
+1. Calls `buildAssistantContext()` from [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) to get the assistant's identity/read-only/harness system prompt, knowledge-base scope stats, retrieved RAG context, and structured citations.
+2. Calls Ollama's `/api/chat` with `stream: false`, using that system prompt and the requested (or default) model.
+3. Returns `{ reply, model, sources }` — `model` here is the assistant's configured **name** (e.g. `"Archivist"`), never the underlying model/provider string, so the real backend is not leaked through the API response either. `sources` is the deduped list of `APPROVED` documents whose chunks were retrieved for this request: `[{ documentId, title, downloadable }]`. `downloadable` is `true` only when the document has a stored original file — the UI uses it to decide whether to render a download link, and it's the only place a `storageKey` value's *existence* is exposed (the key itself never is). See `GET /api/rag/documents/[id]/download` below.
 
-See `app/api/chat/route.ts`.
+Error handling: a `404` from Ollama (model not pulled) returns a clear message pointing at the model dropdown; a connection failure (Ollama not running, or it went down mid-session) returns `503` with a message telling the user to reconnect, rather than a raw fetch exception. See `app/api/chat/route.ts`.
 
 ## `GET /api/rag`
 
-Lightweight debug/inspection endpoint. Returns the same RAG context array the chat route would use:
+Lightweight debug/inspection endpoint. Returns the same RAG context array and citations the chat route would use:
 
 ```json
-{ "ok": true, "count": 2, "context": ["Source 1: ...", "Source 2: ..."] }
+{ "ok": true, "count": 2, "context": ["Source 1: ...", "Source 2: ..."], "citations": [{ "documentId": "...", "title": "...", "downloadable": true }] }
 ```
 
 Useful for verifying that seeded or newly approved chunks are actually retrievable without going through the full chat flow.
 
 See `app/api/rag/route.ts`.
+
+## `GET /api/rag/documents/[id]/download`
+
+Read-only. Redirects (`307`) to a short-lived (5 minute) presigned URL for a document's original stored file. Requires the document to be `status: APPROVED` **and** have a non-null `storageKey` — anything else (not found, still `PENDING_REVIEW`, or no file was ever attached) returns `404`:
+
+```json
+{ "ok": false, "error": "No downloadable file found for this document." }
+```
+
+Bytes are never proxied through the Node process — the redirect target is the storage provider itself, via `getDownloadUrl()` in [`lib/storage.ts`](../lib/storage.ts). This keeps the bucket private (no public-read bucket policy needed) while still staying entirely read-only: the route only ever reads an already-`APPROVED` document's already-set `storageKey`, the same visibility rule as every other route in this file. See `app/api/rag/documents/[id]/download/route.ts`.
 
 ## `GET /api/rag/context`
 
@@ -145,20 +157,31 @@ See `lib/rag/chat-context.ts` (`getAssistantConfig`), `lib/rag/harness.ts` (`get
 
 ## `GET /api/ollama/status`
 
-Checks whether Ollama is reachable at `OLLAMA_URL` and whether the configured `OLLAMA_MODEL` is pulled. Used by the chat UI to show a connection indicator and to gate the message input until a model is actually available.
+Checks whether Ollama is reachable at `OLLAMA_URL` and, if so, which models are actually pulled. Used by the chat UI to show a connection indicator, populate the model dropdown, and gate the message input until the selected model is both installed and the server is reachable.
 
 ```json
 {
   "ok": true,
   "running": true,
-  "modelAvailable": true,
-  "modelName": "qwen2.5:7b-instruct",
-  "availableModels": ["qwen2.5:7b-instruct"],
+  "installedModels": ["qwen2.5:7b-instruct"],
+  "availableModels": ["qwen2.5:7b-instruct", "llama3.1:8b", "mistral:7b-instruct", "gemma2:9b", "phi3.5"],
   "canAutoStart": true
 }
 ```
 
-`canAutoStart` reflects whether `POST /api/ollama/start` is allowed to do anything in this environment — see below.
+`availableModels` is the fixed curated list from `lib/ollama.ts` (`AVAILABLE_MODELS`) — always includes `OLLAMA_MODEL` plus four general-purpose models to try. `installedModels` is whatever Ollama actually reports as pulled right now; the difference between the two drives the "Download model" button. `canAutoStart` reflects whether `POST /api/ollama/start` and `POST /api/ollama/pull` are allowed to do anything in this environment — see below.
+
+## `POST /api/ollama/pull`
+
+Streams a model download straight from Ollama's own `/api/pull` through to the client, so the UI can show real progress instead of a blind spinner for what can be a multi-gigabyte download.
+
+Request body:
+
+```json
+{ "model": "llama3.1:8b" }
+```
+
+`model` must be one of `AVAILABLE_MODELS` — an unrecognized name is refused with a `400`, never forwarded to Ollama. Gated by the same `canAutoStartOllama()` check as `/api/ollama/start` (local `OLLAMA_URL`, non-production) — a deployed instance must never let a visitor's request trigger a large download on the host. The response body is Ollama's newline-delimited JSON progress stream, passed through unmodified; the client parses `completed`/`total` byte counts out of it to render a percentage. See `lib/ollama.ts` and `app/api/ollama/pull/route.ts`.
 
 ## `POST /api/ollama/start`
 

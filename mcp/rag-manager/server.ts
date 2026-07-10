@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -8,11 +9,18 @@ import {
   sourceTypeSchema,
   statusSchema,
   buildSourceProposal,
+  buildFileProposal,
   toRagSourceType,
 } from "./proposal";
+import { extractTextFromPdf, looksLikePdf } from "./extraction";
 import { disconnectPrisma, prisma } from "./prisma";
-import { isStorageConfigured, STORAGE_NOT_CONFIGURED_MESSAGE } from "../../lib/storage";
+import { isStorageConfigured, STORAGE_NOT_CONFIGURED_MESSAGE, uploadFileToStorage } from "../../lib/storage";
 import { buildHarnessProposal } from "../../lib/rag/harness";
+
+// Whole-file base64 round-trips through the calling model's context twice
+// (propose then approve), so cap it well below typical MCP message limits.
+// ~15MB of raw PDF bytes.
+const MAX_UPLOAD_BASE64_CHARS = 20_000_000;
 
 const server = new McpServer({
   name: "rag-manager-mcp",
@@ -272,6 +280,7 @@ server.registerTool(
             chunkIndex: chunk.chunkIndex,
             sectionTitle: chunk.sectionTitle,
             tokenCount: chunk.tokenCount,
+            pageNumber: chunk.pageNumber,
             status: "PENDING_REVIEW",
             metadata: {
               insertedBy: "rag-manager-mcp",
@@ -287,6 +296,7 @@ server.registerTool(
             citationText: proposal.sourcePlan.citationText,
             sectionTitle: chunk.sectionTitle,
             sourceUrl: proposal.sourcePlan.sourceUrl,
+            pageNumber: chunk.pageNumber,
           },
         });
 
@@ -299,6 +309,175 @@ server.registerTool(
     return jsonResult({
       ...result,
       message: "Source saved as PENDING_REVIEW. A human reviewer must approve chunks before the live chat should rely on them.",
+    });
+  },
+);
+
+server.registerTool(
+  "propose_file_upload",
+  {
+    title: "Propose file upload",
+    description:
+      "Analyze an uploaded PDF file (base64-encoded) — extract its text with OCR fallback for scanned/image-only pages — and propose a document/chunk plan. This tool does not write to the database and does not upload anything to storage. Before calling approve_file_upload, the calling assistant must ask the user to choose: (a) extract text only (nothing is stored in the bucket, no storage configuration needed), or (b) also store the original file for later download. Do not assume — always ask, every time a file is uploaded.",
+    inputSchema: {
+      fileName: z.string().min(1),
+      fileBase64: z.string().min(1),
+      title: z.string().optional(),
+      category: z.string().optional(),
+      domain: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      collectionId: z.string().optional(),
+    },
+  },
+  async ({ fileName, fileBase64, title, category, domain, tags, collectionId }) => {
+    if (fileBase64.length > MAX_UPLOAD_BASE64_CHARS) {
+      return textResult(
+        `Refused: file is too large (~${Math.round(fileBase64.length / 1_000_000)}MB base64). Limit is ~15MB of original file data.`,
+      );
+    }
+
+    const buffer = Buffer.from(fileBase64, "base64");
+    if (!looksLikePdf(buffer)) {
+      return textResult("Refused: this does not look like a PDF file (missing %PDF header). Only PDF uploads are supported right now.");
+    }
+
+    const pages = await extractTextFromPdf(buffer);
+    const ocrPageCount = pages.filter((page) => page.ocrUsed).length;
+
+    const proposal = await buildFileProposal({
+      fileName,
+      pages,
+      ocrPageCount,
+      title,
+      category,
+      domain,
+      tags,
+      collectionId,
+    });
+
+    return jsonResult({
+      proposal,
+      fileName,
+      fileBase64,
+      requiredUserQuestion:
+        "Do you want me to save this to the knowledge base? And should I also store the original file for download, or extract just the text (nothing kept in storage)?",
+      storageConfigured: isStorageConfigured(),
+      writesToDatabase: false,
+    });
+  },
+);
+
+server.registerTool(
+  "approve_file_upload",
+  {
+    title: "Approve file upload",
+    description:
+      "Persist a previously proposed file upload (document + page-numbered chunks) into the RAG database as PENDING_REVIEW. Refuses to write unless userApproval is true. Set storeOriginalFile: true to also upload the original file to storage; if storage isn't configured (STORAGE_BUCKET/STORAGE_ACCESS_KEY_ID/STORAGE_SECRET_ACCESS_KEY), this does NOT refuse the whole request — it falls back to saving only the extracted text/chunks and says so clearly in the response, rather than dead-ending with an error. Set storeOriginalFile: false to save only the extracted text/chunks outright, with no storage requirement. The calling assistant must have already asked the user which of these two they want — never assume.",
+    inputSchema: {
+      proposal: proposalSchema,
+      fileName: z.string().min(1),
+      fileBase64: z.string().min(1),
+      storeOriginalFile: z.boolean(),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ proposal, fileName, fileBase64, storeOriginalFile, userApproval }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before saving an uploaded file.");
+    }
+
+    // Wanting the file stored but storage not being configured is not a
+    // reason to refuse the whole upload — fall back to text-only and say so,
+    // rather than leaving the user with nothing saved at all.
+    const willStoreFile = storeOriginalFile && isStorageConfigured();
+    const storageFallbackNotice =
+      storeOriginalFile && !willStoreFile
+        ? `${STORAGE_NOT_CONFIGURED_MESSAGE} Falling back to saving only the extracted text — the original file was not stored.`
+        : null;
+
+    let storageKey: string | null = null;
+    if (willStoreFile) {
+      const buffer = Buffer.from(fileBase64, "base64");
+      storageKey = `documents/${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      await uploadFileToStorage(storageKey, buffer, "application/pdf");
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const collection = proposal.shouldCreateCollection
+        ? await tx.ragCollection.create({
+            data: {
+              name: proposal.proposedCollection.name,
+              description: proposal.proposedCollection.description,
+              category: proposal.proposedCollection.category,
+              domain: proposal.proposedCollection.domain,
+              tags: proposal.proposedCollection.tags,
+            },
+          })
+        : await tx.ragCollection.findUniqueOrThrow({
+            where: { id: proposal.proposedCollection.id },
+          });
+
+      const document = await tx.ragDocument.create({
+        data: {
+          collectionId: collection.id,
+          title: proposal.proposedDocument.title,
+          sourceType: toRagSourceType(proposal.proposedDocument.sourceType),
+          category: proposal.proposedDocument.category,
+          domain: proposal.proposedDocument.domain,
+          tags: proposal.proposedDocument.tags,
+          status: "PENDING_REVIEW",
+          storageKey,
+          metadata: {
+            insertedBy: "rag-manager-mcp",
+            originalFileName: fileName,
+            fileStored: willStoreFile,
+            warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
+          },
+        },
+      });
+
+      const chunks = [];
+      for (const chunk of proposal.chunkPlan) {
+        const createdChunk = await tx.ragChunk.create({
+          data: {
+            documentId: document.id,
+            chunkText: chunk.chunkText,
+            chunkIndex: chunk.chunkIndex,
+            sectionTitle: chunk.sectionTitle,
+            tokenCount: chunk.tokenCount,
+            pageNumber: chunk.pageNumber,
+            status: "PENDING_REVIEW",
+            metadata: {
+              insertedBy: "rag-manager-mcp",
+            },
+          },
+        });
+
+        await tx.ragSource.create({
+          data: {
+            documentId: document.id,
+            chunkId: createdChunk.id,
+            label: proposal.sourcePlan.label,
+            citationText: proposal.sourcePlan.citationText,
+            sectionTitle: chunk.sectionTitle,
+            pageNumber: chunk.pageNumber,
+          },
+        });
+
+        chunks.push(createdChunk);
+      }
+
+      return { collection, document, chunks };
+    });
+
+    return jsonResult({
+      ...result,
+      storageFallback: storageFallbackNotice,
+      message: willStoreFile
+        ? "File uploaded and its text saved as PENDING_REVIEW. A human reviewer must approve its chunks before the live chat can rely on them or the file becomes downloadable (downloads require an APPROVED document)."
+        : storageFallbackNotice
+          ? `${storageFallbackNotice} Its extracted text was still saved as PENDING_REVIEW. A human reviewer must approve its chunks before the live chat can rely on them.`
+          : "Extracted text saved as PENDING_REVIEW; the original file was not stored (storeOriginalFile was false). A human reviewer must approve its chunks before the live chat can rely on them.",
     });
   },
 );
@@ -395,6 +574,14 @@ server.registerTool(
     const result = await prisma.$transaction(async (tx) => {
       const chunk = await tx.ragChunk.update({
         where: { id: chunkId },
+        data: { status: "APPROVED" },
+      });
+      // A document becomes visible to retrieval (lib/rag/retrieval.ts) only
+      // once it has status: APPROVED too — flip it here so approving a
+      // chunk actually has the documented effect instead of leaving the
+      // parent document stuck at PENDING_REVIEW forever.
+      await tx.ragDocument.updateMany({
+        where: { id: chunk.documentId, status: { not: "APPROVED" } },
         data: { status: "APPROVED" },
       });
       const review = await tx.ragReview.create({

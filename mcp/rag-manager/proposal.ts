@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RagSourceType } from "../../generated/prisma/enums";
-import { chunkSourceText } from "./chunking";
+import { chunkSourceText, chunkPdfPages, type ExtractedPageInput } from "./chunking";
 import { prisma } from "./prisma";
 
 export const sourceTypeSchema = z.enum([
@@ -55,6 +55,7 @@ export const proposalSchema = z.object({
       chunkText: z.string(),
       sectionTitle: z.string().optional(),
       tokenCount: z.number().int().positive(),
+      pageNumber: z.number().int().positive().optional(),
     }),
   ),
   sourcePlan: z.object({
@@ -154,4 +155,73 @@ export async function buildSourceProposal(input: {
 
 export function toRagSourceType(sourceType: z.infer<typeof sourceTypeSchema>) {
   return sourceType as RagSourceType;
+}
+
+export async function buildFileProposal(input: {
+  fileName: string;
+  pages: ExtractedPageInput[];
+  ocrPageCount: number;
+  title?: string;
+  category?: string;
+  domain?: string;
+  tags?: string[];
+  collectionId?: string;
+}) {
+  const collection = input.collectionId
+    ? await prisma.ragCollection.findUnique({
+        where: { id: input.collectionId },
+      })
+    : null;
+
+  const title = input.title?.trim() || input.fileName.replace(/\.pdf$/i, "").trim() || "Untitled document";
+  const chunks = chunkPdfPages(input.pages);
+  const warnings: string[] = [];
+
+  if (!input.category && !input.domain) {
+    warnings.push("No category or domain was provided. Consider asking the user how this source should be classified.");
+  }
+  if (chunks.length === 0) {
+    warnings.push("No extractable text was found in this PDF, even after OCR. The file will be stored, but nothing will be added to the knowledge base.");
+  }
+  if (input.ocrPageCount > 0) {
+    warnings.push(
+      `${input.ocrPageCount} of ${input.pages.length} page(s) had no text layer and were processed with OCR — verify accuracy before approving.`,
+    );
+  }
+
+  const proposedCollection = collection
+    ? {
+        id: collection.id,
+        name: collection.name,
+        description: collection.description ?? undefined,
+        category: collection.category ?? input.category,
+        domain: collection.domain ?? input.domain,
+        tags: collection.tags,
+      }
+    : {
+        name: defaultCollectionName(input.category, input.domain),
+        description: "Created from an MCP file upload.",
+        category: input.category,
+        domain: input.domain,
+        tags: input.tags ?? [],
+      };
+
+  return {
+    proposedCollection,
+    shouldCreateCollection: !collection,
+    proposedDocument: {
+      title,
+      sourceType: "PDF" as const,
+      category: input.category,
+      domain: input.domain,
+      tags: input.tags ?? [],
+    },
+    chunkPlan: chunks,
+    sourcePlan: {
+      label: title,
+      citationText: title,
+    },
+    reviewStatus: "PENDING_REVIEW" as const,
+    warnings,
+  } satisfies SourceProposal;
 }

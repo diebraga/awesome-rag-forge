@@ -15,17 +15,19 @@ This is intentionally simple for the first version. The schema already reserves 
 - Estimates a token count per chunk (rough heuristic, not a real tokenizer).
 - Infers a `sectionTitle` when a paragraph's first line looks like a heading.
 
-This is a starting point, not a production chunker. If you bring in PDFs or large documents, you'll likely want smarter splitting (headings-aware, token-accurate, or model-based).
+This is a starting point, not a production chunker. For plain-text/Markdown sources going through `propose_source_insert`, you'll likely still want smarter splitting (headings-aware, token-accurate, or model-based) as documents grow.
+
+PDF uploads (`propose_file_upload`) use a separate, page-aware chunker, `chunkPdfPages()` in the same file: it chunks each page's text independently (same ~1600-char paragraph merging) and tags every resulting chunk with its source `pageNumber`, rather than merging across page boundaries. `RagChunk.pageNumber`/`RagSource.pageNumber` exist in the schema specifically for this — see [MCP Server](mcp-server.md#uploading-a-file-directly-propose_file_upload--approve_file_upload) for the extraction pipeline (`mcp/rag-manager/extraction.ts`) that feeds it, including the OCR fallback.
 
 ## Human review loop
 
 New knowledge is never immediately usable by the chat app:
 
-1. `propose_source_insert` — read-only, returns a proposal (recommended collection, document metadata, chunk plan, warnings).
-2. `approve_source_insert` — writes the document/chunks as `PENDING_REVIEW`, but only if `userApproval: true`.
-3. `approve_chunk` / `reject_chunk` — a human reviewer moves chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record.
+1. `propose_source_insert` (or `propose_file_upload` for a PDF) — read-only, returns a proposal (recommended collection, document metadata, chunk plan, warnings).
+2. `approve_source_insert` (or `approve_file_upload`) — writes the document/chunks as `PENDING_REVIEW`, but only if `userApproval: true`.
+3. `approve_chunk` / `reject_chunk` — a human reviewer moves chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already — that's what makes the document (and its downloadable file, if it has one) actually visible; a document sitting at `PENDING_REVIEW` is never retrieved or downloadable regardless of individual chunk statuses.
 
-Only step 3's `APPROVED` chunks are ever surfaced to end users in the chat app.
+Only step 3's `APPROVED` chunks (belonging to an `APPROVED` document) are ever surfaced to end users in the chat app.
 
 ## Feedback and evaluation
 
