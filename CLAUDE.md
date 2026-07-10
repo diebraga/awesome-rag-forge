@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# rag-builder-mcp — Claude entry point
+# awesome-rag-forge — Claude entry point
 
 Generic RAG knowledge base builder managed through an MCP server, with a strict split between the two components:
 

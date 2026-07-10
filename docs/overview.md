@@ -1,6 +1,6 @@
 # Project Overview
 
-**rag-builder-mcp** is a generic RAG (retrieval-augmented generation) knowledge base builder. Instead of a manual admin panel, you build, organize, and review your knowledge base by talking to an AI assistant connected through an MCP (Model Context Protocol) server.
+**awesome-rag-forge** is a generic RAG (retrieval-augmented generation) knowledge base builder. Instead of a manual admin panel, you build, organize, and review your knowledge base by talking to an AI assistant connected through an MCP (Model Context Protocol) server.
 
 ## Core idea
 

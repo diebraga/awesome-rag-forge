@@ -3,11 +3,12 @@ import "./globals.css";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { Header } from "@/components/header";
+import { PROJECT_NAME } from "@/lib/project";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "Talk to RAG",
+  title: PROJECT_NAME,
   description: "Chat UI for a conversational, MCP-managed RAG knowledge base.",
 };
 

@@ -24,7 +24,7 @@ If any required piece is missing, `npm run dev`/`npm run build`/`npx prisma db p
 
 ```bash
 git clone <your-fork-or-repo-url>
-cd rag-builder-mcp
+cd awesome-rag-forge
 npm install
 cp .env.example .env   # then fill in DATABASE_URL
 npx prisma generate

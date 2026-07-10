@@ -1,4 +1,4 @@
-# rag-builder-mcp — Codex entry point
+# awesome-rag-forge — Codex entry point
 
 See `AGENTS.md` first for the project-wide coding note that applies regardless of which assistant is running.
 

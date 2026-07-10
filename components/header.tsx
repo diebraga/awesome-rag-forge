@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { PROJECT_NAME } from "@/lib/project";
 
 const NAV_LINKS = [
   { href: "/", label: "Chat" },
@@ -14,7 +15,7 @@ export function Header() {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/10 px-4">
-      <span className="text-sm font-semibold tracking-tight text-black">rag-builder-mcp</span>
+      <span className="text-sm font-semibold tracking-tight text-black">{PROJECT_NAME}</span>
       <nav className="flex items-center gap-5">
         {NAV_LINKS.map((link) => {
           const isActive =

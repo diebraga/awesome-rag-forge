@@ -1,4 +1,4 @@
-# rag-builder-mcp
+# awesome-rag-forge
 
 A generic RAG (retrieval-augmented generation) knowledge base builder, managed by talking to an AI assistant through an MCP server — not through a manual admin panel.
 
@@ -32,7 +32,7 @@ Full detail, including how to enable `pgvector` and connect an MCP client: [docs
 
 ```bash
 git clone <your-fork-or-repo-url>
-cd rag-builder-mcp
+cd awesome-rag-forge
 npm install
 cp .env.example .env   # fill in DATABASE_URL
 npx prisma generate

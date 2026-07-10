@@ -1,4 +1,4 @@
-# rag-builder-mcp — GitHub Copilot entry point
+# awesome-rag-forge — GitHub Copilot entry point
 
 See `AGENTS.md` first for the project-wide coding note that applies regardless of which assistant is running.
 

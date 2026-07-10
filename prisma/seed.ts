@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
+import { PROJECT_DOCUMENTATION_NAME } from "../lib/project";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -12,7 +13,7 @@ async function main() {
   const collection = await prisma.ragCollection.upsert({
     where: { id: "rag_collection_sample" },
     update: {
-      name: "RAG Builder Documentation",
+      name: PROJECT_DOCUMENTATION_NAME,
       description: "Sample collection that explains what this project does, for local verification.",
       category: "documentation",
       domain: "product",
@@ -20,7 +21,7 @@ async function main() {
     },
     create: {
       id: "rag_collection_sample",
-      name: "RAG Builder Documentation",
+      name: PROJECT_DOCUMENTATION_NAME,
       description: "Sample collection that explains what this project does, for local verification.",
       category: "documentation",
       domain: "product",
@@ -111,7 +112,7 @@ async function main() {
     update: {
       documentId: document.id,
       chunkId: createdChunks[0].id,
-      label: "RAG Builder Documentation",
+      label: PROJECT_DOCUMENTATION_NAME,
       citationText: "What this project does, Overview",
       sectionTitle: "Overview",
     },
@@ -119,7 +120,7 @@ async function main() {
       id: "rag_source_sample",
       documentId: document.id,
       chunkId: createdChunks[0].id,
-      label: "RAG Builder Documentation",
+      label: PROJECT_DOCUMENTATION_NAME,
       citationText: "What this project does, Overview",
       sectionTitle: "Overview",
     },

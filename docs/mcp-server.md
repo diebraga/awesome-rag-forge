@@ -129,7 +129,7 @@ Add an entry pointing at this repo's checkout, for example (Claude Desktop `clau
     "rag-manager": {
       "command": "npm",
       "args": ["run", "mcp:rag-manager"],
-      "cwd": "/absolute/path/to/your/local/clone/rag-builder-mcp"
+      "cwd": "/absolute/path/to/your/local/clone/awesome-rag-forge"
     }
   }
 }

@@ -93,7 +93,7 @@ Read-only, `APPROVED`-only list of collections for the [Collections page](#the-c
   "collections": [
     {
       "id": "rag_collection_sample",
-      "name": "RAG Builder Documentation",
+      "name": "Awesome RAG Forge Documentation",
       "description": "Sample collection...",
       "category": "documentation",
       "domain": "product",
