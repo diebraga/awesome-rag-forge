@@ -8,6 +8,12 @@
 2. **The MCP server** (`mcp/rag-manager`) — a local stdio process. It is **not** hosted by deploying the Next.js app. There is no HTTP transport configured for it in this repo. It only runs on a machine where you (or your MCP client) start it directly.
 3. **The database** — any managed Postgres-compatible database (e.g. Prisma Postgres, Supabase, RDS, Neon). Both the app and the MCP server connect to the same `DATABASE_URL`.
 
+## Testing surface is off by default
+
+`ENABLE_TESTING_SURFACE` defaults to disabled, and a missing Vercel env var is treated as disabled. With the flag off, the chat, Collections, and Harness pages return 404, the header omits their links, and the supporting `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*` routes return 404 JSON. This lets you deploy the app without accidentally publishing the local testing UI before authentication exists.
+
+Set `ENABLE_TESTING_SURFACE=true` only for a private/local testing deployment, or after you have added authentication. The MCP server is unaffected by this flag; it remains a separate local process. See [Testing Surface](testing-surface.md).
+
 ## Why the model server needs attention
 
 The chat route defaults to `http://127.0.0.1:11434` — your local Ollama instance. That will not resolve on a hosted deployment. Options:

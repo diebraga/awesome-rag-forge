@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { canAutoStartOllama, startOllamaLocally } from "@/lib/ollama";
 
 /**
@@ -8,6 +9,13 @@ import { canAutoStartOllama, startOllamaLocally } from "@/lib/ollama";
  * than the one this Next.js server is already running on.
  */
 export async function POST() {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   if (!canAutoStartOllama()) {
     return NextResponse.json(
       {

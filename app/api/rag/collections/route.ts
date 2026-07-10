@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { listApprovedCollections } from "@/lib/rag/collections";
 
 /**
@@ -6,6 +7,13 @@ import { listApprovedCollections } from "@/lib/rag/collections";
  * Same visibility as the chat — see lib/rag/collections.ts.
  */
 export async function GET() {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   try {
     const collections = await listApprovedCollections();
     return NextResponse.json({ ok: true, collections });

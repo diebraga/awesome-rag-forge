@@ -21,6 +21,11 @@ Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (t
 - **Bound to `127.0.0.1` by default, on purpose.** Override with `MCP_HTTP_HOST`/`MCP_HTTP_PORT`, but this server has full read/write access to the knowledge base (see [Security Considerations](security.md#mcp-server-trust-boundary)) — widening the bind address means putting real authentication in front of it first, not just changing an env var. There is no auth on this transport today.
 - Both entry points share one tool registry — a tool added to `mcp/rag-manager/server.ts` is automatically available over both transports; there is nothing HTTP-specific to update per tool.
 
+
+## Operating boundary
+
+The MCP server is allowed to create and manage the RAG knowledge base and harness through its supported tools. Database writes performed by these tools are normal MCP Operator Mode actions, including approval-gated writes and archival actions. Developer Mode is only for changing repository files, folder structure, Prisma schema files, dependencies, scripts, or application code. See [Operating Modes](operating-modes.md).
+
 ## Tools
 
 | Tool | Writes to DB? | Purpose |
@@ -41,6 +46,11 @@ Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (t
 | `approve_chunk` | Yes | Mark a chunk `APPROVED`, flip its parent document to `APPROVED` too (so it actually becomes visible to the chat/download route), and log a review. |
 | `reject_chunk` | Yes | Mark a chunk `REJECTED` and log a review. |
 | `add_feedback` | Yes | Record feedback on an answer or chunk. |
+| `get_feedback_summary` | No | Summarize feedback counts and recent trends before fetching individual records. |
+| `list_feedback_page` | No | List a small compact page of feedback records, defaulting to unresolved negative feedback. |
+| `get_feedback_case` | No | Inspect full details for one feedback item by ID. |
+| `create_eval_case_from_feedback` | Yes (if approved) | Create a passing/regression eval case from feedback, only when `userApproval: true`. |
+| `mark_feedback_resolved` | Yes (if approved) | Mark feedback reviewed/resolved, only when `userApproval: true`; does not change live knowledge. |
 | `create_eval_case` | Yes | Record a test question for future evaluation. |
 | `get_assistant_config` | No | Read the chat assistant's current name/instructions. |
 | `set_assistant_name` | Yes (direct) | Set the chat assistant's name/instructions. The **only** way to change it. |
@@ -99,6 +109,14 @@ For fixing a typo, updating a stale fact, or otherwise correcting a chunk's text
 2. `approve_chunk_update` — takes the same `chunkId`/`chunkText`/`sectionTitle` plus `userApproval: true`. Refuses otherwise. Updates the chunk's text and token count, and — the important part — **if the chunk was `APPROVED`, its status resets to `PENDING_REVIEW`.** An edited fact is not the same fact as the one that was originally reviewed; it doesn't inherit that approval. A human must run `approve_chunk` again after an edit, exactly as if it were new. The parent `RagDocument` and its other chunks are untouched — only the edited chunk drops out of the live chat until re-approved.
 
 Every edit is logged as a `RagReview` row (`status: PENDING`) with the old and new text in `notes`, so there's a record of what changed, not just that something did.
+
+## Feedback review loop
+
+Feedback review is MCP-only and token-efficient by design. Start with `get_feedback_summary`, then use `list_feedback_page` for a small queue, then `get_feedback_case` for one selected item. Do not load every feedback row into the assistant context.
+
+The default queue is unresolved negative feedback. Positive feedback is mostly aggregate signal and should be fetched explicitly when looking for passing eval candidates.
+
+`create_eval_case_from_feedback` and `mark_feedback_resolved` both require `userApproval: true`. Neither changes live knowledge. If a feedback item reveals missing or wrong knowledge, use the existing `propose_source_insert`/`approve_source_insert` or `propose_chunk_update`/`approve_chunk_update` workflow; if it reveals a behavior issue, use the harness proposal workflow. See [Feedback Review Loop](feedback-review-loop.md).
 
 ## Assistant identity: `set_assistant_name`
 

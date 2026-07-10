@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -30,6 +31,13 @@ function truncate(value: string | undefined) {
 }
 
 export async function POST(request: Request) {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   try {
     const body = (await request.json()) as FeedbackRequest;
 

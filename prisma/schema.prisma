@@ -127,21 +127,31 @@ model RagSource {
 }
 
 model RagFeedback {
-  id         String            @id @default(cuid())
-  documentId String?
-  document   RagDocument?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  chunkId    String?
-  chunk      RagChunk?         @relation(fields: [chunkId], references: [id], onDelete: SetNull)
-  question   String?
-  answer     String?
-  rating     RagFeedbackRating
-  comment    String?
-  metadata   Json?
-  createdAt  DateTime          @default(now())
+  id               String            @id @default(cuid())
+  documentId       String?
+  document         RagDocument?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  chunkId          String?
+  chunk            RagChunk?         @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  question         String?
+  answer           String?
+  rating           RagFeedbackRating
+  comment          String?
+  failureCategory  String?
+  reviewStatus     RagReviewStatus   @default(PENDING)
+  resolutionStatus String?
+  resolutionNotes  String?
+  reviewer         String?
+  reviewedAt       DateTime?
+  resolvedAt       DateTime?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
 
   @@index([documentId])
   @@index([chunkId])
   @@index([rating])
+  @@index([reviewStatus])
+  @@index([failureCategory])
+  @@index([resolvedAt])
 }
 
 model RagReview {

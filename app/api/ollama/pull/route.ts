@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { canAutoStartOllama, isKnownModel, OLLAMA_URL } from "@/lib/ollama";
 
 /**
@@ -13,6 +14,13 @@ import { canAutoStartOllama, isKnownModel, OLLAMA_URL } from "@/lib/ollama";
  * never pass an arbitrary client-supplied model name to Ollama.
  */
 export async function POST(request: Request) {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   if (!canAutoStartOllama()) {
     return NextResponse.json(
       {

@@ -10,14 +10,15 @@ const NAV_LINKS = [
   { href: "/harness", label: "Harness" },
 ];
 
-export function Header() {
+export function Header({ testingSurfaceEnabled }: { testingSurfaceEnabled: boolean }) {
   const pathname = usePathname();
+  const links = testingSurfaceEnabled ? NAV_LINKS : [];
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/10 px-4">
       <span className="text-sm font-semibold tracking-tight text-black">{PROJECT_NAME}</span>
       <nav className="flex items-center gap-5">
-        {NAV_LINKS.map((link) => {
+        {links.map((link) => {
           const isActive =
             link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
           return (

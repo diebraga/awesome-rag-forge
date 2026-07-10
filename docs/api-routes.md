@@ -1,5 +1,7 @@
 # API Routes
 
+Every route below is part of the web testing surface and is hidden unless `ENABLE_TESTING_SURFACE=true`. When the flag is missing or false, the pages return 404 and these API routes return `404` JSON before doing any work. See [Testing Surface](testing-surface.md).
+
 Every route below is **read-only** except `POST /api/feedback`, which is a single, deliberately narrow exception — it can create a `RagFeedback` row and nothing else. See [System Architecture](architecture.md) for the enforced read/write boundary and why that one route exists.
 
 ## `POST /api/chat`

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { buildAssistantContext } from "@/lib/rag/chat-context";
 
 /**
@@ -15,6 +16,13 @@ import { buildAssistantContext } from "@/lib/rag/chat-context";
  * Add an API key or similar before exposing this beyond your own machine.
  */
 export async function GET() {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   try {
     const context = await buildAssistantContext();
     return NextResponse.json({ ok: true, ...context });

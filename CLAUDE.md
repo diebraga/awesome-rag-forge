@@ -14,12 +14,15 @@ See [docs/overview.md](docs/overview.md) and [docs/architecture.md](docs/archite
 Load only what's relevant to your current task:
 
 - [Project Overview](docs/overview.md) — what this project is and isn't.
+- [Operating Modes](docs/operating-modes.md) — Operator Mode vs. explicit Developer Mode for code/schema changes.
 - [Repository Structure](docs/repository-structure.md) — where things live.
 - [System Architecture](docs/architecture.md) — chat path vs. knowledge-management path.
 - [Database & Prisma](docs/database.md) — schema, `db push` workflow, generic fields.
 - [RAG Architecture](docs/rag.md) — chunking, retrieval, review loop, feedback/eval.
+- [Feedback Review Loop](docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
 - [MCP Server](docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
 - [API Routes](docs/api-routes.md) — `/api/chat`, `/api/rag`.
+- [Testing Surface](docs/testing-surface.md) — `ENABLE_TESTING_SURFACE` gate for chat, collections, harness, feedback, RAG, and Ollama web routes.
 - [Environment Variables](docs/environment-variables.md) — required vs. optional vars.
 - [Development Workflow](docs/development-workflow.md) — local setup and everyday scripts.
 - [Testing](docs/testing.md) — `npm test` (Vitest) plus the manual verification checklist.

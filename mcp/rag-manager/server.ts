@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import type { Prisma } from "../../generated/prisma/client";
 import {
   feedbackRatingSchema,
   proposalSchema,
@@ -58,6 +59,142 @@ function textResult(text: string) {
       },
     ],
   };
+}
+
+const reviewStatusSchema = z.enum(["PENDING", "APPROVED", "REJECTED"]);
+const feedbackQueueSchema = z.enum(["needs_review", "positive", "all"]);
+const feedbackSortSchema = z.enum(["newest", "oldest", "priority"]);
+
+const NEGATIVE_FEEDBACK_RATINGS = ["BAD", "INCOMPLETE", "UNSAFE", "OUTDATED"] as const;
+const FEEDBACK_PREVIEW_LENGTH = 180;
+
+type FeedbackReviewRecord = {
+  id: string;
+  documentId: string | null;
+  chunkId: string | null;
+  question: string | null;
+  answer: string | null;
+  rating: string;
+  comment: string | null;
+  failureCategory: string | null;
+  reviewStatus: string;
+  resolutionStatus: string | null;
+  metadata: unknown;
+  createdAt: Date;
+  reviewedAt: Date | null;
+  resolvedAt: Date | null;
+};
+
+function previewText(value: string | null | undefined, length = FEEDBACK_PREVIEW_LENGTH) {
+  if (!value) return null;
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > length ? `${compact.slice(0, length - 3)}...` : compact;
+}
+
+function metadataRecord(metadata: unknown): Record<string, unknown> {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : {};
+}
+
+function getCitedDocumentIds(metadata: unknown) {
+  const ids = metadataRecord(metadata).citedDocumentIds;
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+}
+
+function buildFeedbackWhere(input: {
+  queue?: z.infer<typeof feedbackQueueSchema>;
+  rating?: z.infer<typeof feedbackRatingSchema>;
+  reviewStatus?: z.infer<typeof reviewStatusSchema>;
+  resolved?: boolean;
+  failureCategory?: string;
+}) {
+  const where: Prisma.RagFeedbackWhereInput = {};
+
+  if (input.rating) {
+    where.rating = input.rating;
+  } else if (input.queue === "needs_review") {
+    where.rating = { in: [...NEGATIVE_FEEDBACK_RATINGS] };
+  } else if (input.queue === "positive") {
+    where.rating = "GOOD";
+  }
+
+  if (input.reviewStatus) {
+    where.reviewStatus = input.reviewStatus;
+  } else if (input.queue === "needs_review") {
+    where.reviewStatus = "PENDING";
+  }
+
+  if (typeof input.resolved === "boolean") {
+    where.resolvedAt = input.resolved ? { not: null } : null;
+  } else if (input.queue === "needs_review") {
+    where.resolvedAt = null;
+  }
+
+  if (input.failureCategory) {
+    where.failureCategory = input.failureCategory;
+  }
+
+  return where;
+}
+
+function compactFeedback(feedback: FeedbackReviewRecord) {
+  const citedDocumentIds = getCitedDocumentIds(feedback.metadata);
+  return {
+    id: feedback.id,
+    rating: feedback.rating,
+    questionPreview: previewText(feedback.question),
+    answerPreview: previewText(feedback.answer),
+    commentPreview: previewText(feedback.comment, 120),
+    failureCategory: feedback.failureCategory,
+    reviewStatus: feedback.reviewStatus,
+    resolutionStatus: feedback.resolutionStatus,
+    resolved: feedback.resolvedAt !== null,
+    citedDocumentCount: citedDocumentIds.length + (feedback.documentId ? 1 : 0),
+    citedDocumentIds,
+    documentId: feedback.documentId,
+    chunkId: feedback.chunkId,
+    createdAt: feedback.createdAt,
+    reviewedAt: feedback.reviewedAt,
+    resolvedAt: feedback.resolvedAt,
+  };
+}
+
+async function getFeedbackLinkedSources(feedback: { documentId: string | null; chunkId: string | null; metadata: unknown }) {
+  const citedDocumentIds = getCitedDocumentIds(feedback.metadata);
+  const documentIds = [...new Set([feedback.documentId, ...citedDocumentIds].filter(Boolean))] as string[];
+
+  const [documents, chunk] = await Promise.all([
+    documentIds.length > 0
+      ? prisma.ragDocument.findMany({
+          where: { id: { in: documentIds } },
+          select: {
+            id: true,
+            title: true,
+            category: true,
+            domain: true,
+            status: true,
+            collection: { select: { id: true, name: true } },
+          },
+        })
+      : Promise.resolve([]),
+    feedback.chunkId
+      ? prisma.ragChunk.findUnique({
+          where: { id: feedback.chunkId },
+          select: {
+            id: true,
+            chunkIndex: true,
+            sectionTitle: true,
+            status: true,
+            chunkText: true,
+            document: { select: { id: true, title: true } },
+            sources: { select: { label: true, citationText: true, sourceUrl: true } },
+          },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  return { documents, chunk };
 }
 
 server.registerTool(
@@ -846,6 +983,280 @@ server.registerTool(
   async (input) => {
     const feedback = await prisma.ragFeedback.create({ data: input });
     return jsonResult(feedback);
+  },
+);
+
+server.registerTool(
+  "get_feedback_summary",
+  {
+    title: "Summarize feedback",
+    description:
+      "Return token-efficient aggregate feedback counts and trends. Use this before listing individual feedback records; do not fetch every row by default.",
+    inputSchema: {
+      recentLimit: z.number().int().min(10).max(500).default(100),
+    },
+  },
+  async ({ recentLimit }) => {
+    const [total, byRating, byReviewStatus, unresolvedNegative, resolved, recentFeedback] = await Promise.all([
+      prisma.ragFeedback.count(),
+      prisma.ragFeedback.groupBy({ by: ["rating"], _count: { _all: true } }),
+      prisma.ragFeedback.groupBy({ by: ["reviewStatus"], _count: { _all: true } }),
+      prisma.ragFeedback.count({
+        where: {
+          rating: { in: [...NEGATIVE_FEEDBACK_RATINGS] },
+          reviewStatus: "PENDING",
+          resolvedAt: null,
+        },
+      }),
+      prisma.ragFeedback.count({ where: { resolvedAt: { not: null } } }),
+      prisma.ragFeedback.findMany({
+        orderBy: { createdAt: "desc" },
+        take: recentLimit,
+        select: {
+          id: true,
+          rating: true,
+          question: true,
+          failureCategory: true,
+          reviewStatus: true,
+          resolvedAt: true,
+          metadata: true,
+          documentId: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const ratingCounts = Object.fromEntries(byRating.map((item) => [item.rating, item._count._all]));
+    const reviewStatusCounts = Object.fromEntries(byReviewStatus.map((item) => [item.reviewStatus, item._count._all]));
+    const failureCategoryCounts = new Map<string, number>();
+    const citedDocumentCounts = new Map<string, number>();
+    const questionPatternCounts = new Map<string, { count: number; example: string }>();
+
+    for (const feedback of recentFeedback) {
+      if (feedback.failureCategory) {
+        failureCategoryCounts.set(feedback.failureCategory, (failureCategoryCounts.get(feedback.failureCategory) ?? 0) + 1);
+      }
+      for (const documentId of [feedback.documentId, ...getCitedDocumentIds(feedback.metadata)].filter(Boolean) as string[]) {
+        citedDocumentCounts.set(documentId, (citedDocumentCounts.get(documentId) ?? 0) + 1);
+      }
+      if (feedback.question) {
+        const normalized = feedback.question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+        if (normalized) {
+          const existing = questionPatternCounts.get(normalized);
+          questionPatternCounts.set(normalized, {
+            count: (existing?.count ?? 0) + 1,
+            example: existing?.example ?? feedback.question,
+          });
+        }
+      }
+    }
+
+    const top = <T,>(items: T[], limit = 5) => items.slice(0, limit);
+    const sortCountEntries = (map: Map<string, number>) => [...map.entries()].sort((a, b) => b[1] - a[1]);
+
+    return jsonResult({
+      total,
+      ratingCounts,
+      reviewStatusCounts,
+      unresolvedNegative,
+      resolved,
+      unresolved: total - resolved,
+      recentSampleSize: recentFeedback.length,
+      topFailureCategories: top(sortCountEntries(failureCategoryCounts)).map(([category, count]) => ({ category, count })),
+      topCitedDocumentIds: top(sortCountEntries(citedDocumentCounts)).map(([documentId, count]) => ({ documentId, count })),
+      topQuestionPatterns: top(
+        [...questionPatternCounts.entries()]
+          .map(([pattern, value]) => ({ pattern, count: value.count, example: previewText(value.example, 120) }))
+          .sort((a, b) => b.count - a.count),
+      ),
+      recommendedNextStep:
+        unresolvedNegative > 0
+          ? "Call list_feedback_page with the default needs_review queue, then inspect one feedback ID before proposing any fix."
+          : "No unresolved negative feedback found. Review positive feedback only if you want passing eval candidates.",
+    });
+  },
+);
+
+server.registerTool(
+  "list_feedback_page",
+  {
+    title: "List compact feedback page",
+    description:
+      "Return a small, token-efficient page of feedback records. Defaults to unresolved negative feedback that needs review. Use get_feedback_case for full details on one item.",
+    inputSchema: {
+      queue: feedbackQueueSchema.default("needs_review"),
+      rating: feedbackRatingSchema.optional(),
+      reviewStatus: reviewStatusSchema.optional(),
+      resolved: z.boolean().optional(),
+      failureCategory: z.string().optional(),
+      limit: z.number().int().min(1).max(25).default(10),
+      cursor: z.string().optional(),
+      sort: feedbackSortSchema.default("priority"),
+    },
+  },
+  async ({ queue, rating, reviewStatus, resolved, failureCategory, limit, cursor, sort }) => {
+    const feedback = await prisma.ragFeedback.findMany({
+      where: buildFeedbackWhere({ queue, rating, reviewStatus, resolved, failureCategory }),
+      orderBy: { createdAt: sort === "oldest" ? "asc" : "desc" },
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+
+    const page = feedback.slice(0, limit);
+    const nextCursor = feedback.length > limit ? feedback[limit].id : null;
+
+    return jsonResult({
+      queue,
+      count: page.length,
+      nextCursor,
+      items: page.map(compactFeedback),
+      usageHint: nextCursor
+        ? `More feedback exists. Call list_feedback_page again with cursor: ${nextCursor}.`
+        : "End of this feedback page.",
+    });
+  },
+);
+
+server.registerTool(
+  "get_feedback_case",
+  {
+    title: "Get feedback case details",
+    description:
+      "Return full details for one feedback item, including linked document/chunk context. Use only after summary/page selection to stay token-efficient.",
+    inputSchema: {
+      feedbackId: z.string(),
+    },
+  },
+  async ({ feedbackId }) => {
+    const feedback = await prisma.ragFeedback.findUniqueOrThrow({
+      where: { id: feedbackId },
+      include: {
+        document: { select: { id: true, title: true, category: true, domain: true, status: true } },
+        chunk: {
+          select: {
+            id: true,
+            chunkIndex: true,
+            sectionTitle: true,
+            status: true,
+            chunkText: true,
+            document: { select: { id: true, title: true } },
+            sources: { select: { label: true, citationText: true, sourceUrl: true } },
+          },
+        },
+      },
+    });
+    const linkedSources = await getFeedbackLinkedSources(feedback);
+
+    return jsonResult({
+      feedback,
+      linkedSources,
+      recommendedReviewShape: {
+        likelyIssue: feedback.failureCategory ?? "Unclassified. The MCP assistant should inspect the question, answer, comment, and sources, then propose a category before writing anything.",
+        safeNextActions: [
+          "create_eval_case_from_feedback",
+          "propose_source_insert or propose_chunk_update if knowledge is missing or wrong",
+          "propose_harness_update if behavior needs a new approved rule",
+          "mark_feedback_resolved once the human accepts the outcome",
+        ],
+      },
+    });
+  },
+);
+
+server.registerTool(
+  "create_eval_case_from_feedback",
+  {
+    title: "Create eval case from feedback",
+    description:
+      "Create a RagEvalCase from one feedback item after the user approves. Positive feedback can become a passing eval; negative feedback can become a regression eval. This never changes live knowledge.",
+    inputSchema: {
+      feedbackId: z.string(),
+      expectedAnswer: z.string().optional(),
+      collectionId: z.string().optional(),
+      category: z.string().optional(),
+      domain: z.string().optional(),
+      tags: z.array(z.string()).default(["feedback"]),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ feedbackId, expectedAnswer, collectionId, category, domain, tags, userApproval }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before creating an eval case from feedback.");
+    }
+
+    const feedback = await prisma.ragFeedback.findUniqueOrThrow({ where: { id: feedbackId } });
+    if (!feedback.question) {
+      return textResult("Refused: this feedback item has no question to turn into an eval case.");
+    }
+
+    const { documents, chunk } = await getFeedbackLinkedSources(feedback);
+    const expectedSources = [
+      ...documents.map((document) => ({ label: document.title, citationText: document.collection.name })),
+      ...(chunk?.sources.map((source) => ({
+        label: source.label,
+        citationText: source.citationText ?? undefined,
+        sourceUrl: source.sourceUrl ?? undefined,
+      })) ?? []),
+    ];
+
+    const evalCase = await prisma.ragEvalCase.create({
+      data: {
+        question: feedback.question,
+        expectedAnswer: expectedAnswer ?? feedback.answer ?? undefined,
+        expectedSources: expectedSources.length > 0 ? { sources: expectedSources } : undefined,
+        collectionId,
+        category,
+        domain,
+        tags: [...new Set([...(tags ?? []), "from-feedback", feedback.rating.toLowerCase()])],
+      },
+    });
+
+    return jsonResult({
+      evalCase,
+      feedbackId,
+      message:
+        "Eval case created from feedback. This does not mark the feedback resolved by itself; call mark_feedback_resolved after the human accepts the review outcome.",
+    });
+  },
+);
+
+server.registerTool(
+  "mark_feedback_resolved",
+  {
+    title: "Mark feedback resolved",
+    description:
+      "Mark one feedback item reviewed/resolved after the user accepts the outcome. This changes feedback review state only; it never changes live knowledge.",
+    inputSchema: {
+      feedbackId: z.string(),
+      resolutionStatus: z.string().min(1),
+      resolutionNotes: z.string().min(1),
+      failureCategory: z.string().optional(),
+      reviewer: z.string().optional(),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ feedbackId, resolutionStatus, resolutionNotes, failureCategory, reviewer, userApproval }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before marking feedback resolved.");
+    }
+
+    const feedback = await prisma.ragFeedback.update({
+      where: { id: feedbackId },
+      data: {
+        reviewStatus: "APPROVED",
+        failureCategory,
+        resolutionStatus,
+        resolutionNotes,
+        reviewer,
+        reviewedAt: new Date(),
+        resolvedAt: new Date(),
+      },
+    });
+
+    return jsonResult({
+      feedback,
+      message: "Feedback marked resolved. No RAG knowledge or harness rule was changed by this action.",
+    });
   },
 );
 

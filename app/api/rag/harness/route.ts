@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { prisma } from "@/lib/prisma";
 import { getAssistantConfig } from "@/lib/rag/chat-context";
 import { getApprovedHarnessRules } from "@/lib/rag/harness";
@@ -10,6 +11,13 @@ import { getApprovedHarnessRules } from "@/lib/rag/harness";
  * lib/rag/harness.ts and lib/rag/chat-context.ts.
  */
 export async function GET() {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   try {
     const [{ name, instructions }, { capabilities, restrictions }] = await Promise.all([
       getAssistantConfig(),

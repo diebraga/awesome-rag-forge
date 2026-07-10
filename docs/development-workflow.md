@@ -20,6 +20,12 @@ Optional, only if you want uploaded files stored and downloadable (not required 
 
 If any required piece is missing, `npm run dev`/`npm run build`/`npx prisma db push` will fail with an error pointing at what's wrong — none of it fails silently.
 
+## Operator vs. Developer Mode
+
+Most local MCP users should treat the server as a knowledge-base manager, not a code editor. See [Operating Modes](operating-modes.md).
+
+This template sets `DEVELOPER_MODE=true` so developers can intentionally modify the repository after explicit user confirmation. This flag is only about source-code/schema/dependency/project-structure changes. Normal MCP knowledge-base operations, including approval-gated writes and archival actions, remain available either way. Non-technical users who only want MCP knowledge management should set `DEVELOPER_MODE=false` in `.env`.
+
 ## First-time local setup
 
 ```bash

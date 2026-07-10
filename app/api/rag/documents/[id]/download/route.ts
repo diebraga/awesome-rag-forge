@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
 import { prisma } from "@/lib/prisma";
 import { getDownloadUrl } from "@/lib/storage";
 
@@ -12,6 +13,13 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!isTestingSurfaceEnabled()) {
+    return NextResponse.json(
+      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
+      { status: 404 },
+    );
+  }
+
   try {
     const { id } = await params;
     const document = await prisma.ragDocument.findUnique({

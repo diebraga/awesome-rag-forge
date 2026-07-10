@@ -74,6 +74,12 @@ Every tool in `mcp/rag-manager/server.ts` that writes to the database takes a `u
 
 `attach_document_file` also merges into a document's existing `metadata` JSON instead of overwriting it — it fetches the current value first and spreads it before adding `originalFileName`. A prior version replaced the field outright, silently discarding anything already there (e.g. `insertedBy`/`warnings` set during ingestion). Any future code that updates `metadata` on an existing row should merge, not overwrite, for the same reason.
 
+## Testing surface exposure gate
+
+The Next.js testing surface is hidden unless `ENABLE_TESTING_SURFACE=true`. When disabled, the testing pages render 404 and the supporting API routes return 404 JSON. This includes `/`, `/collections`, `/harness`, `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*`.
+
+This is not a replacement for authentication. It is an exposure switch that prevents accidental public deployment of local testing tools while auth is still absent. Do not remove the guard to make a deployed route work; either intentionally enable the flag in a trusted environment or add authentication first. See [Testing Surface](testing-surface.md).
+
 ## `GET /api/rag/context` has no authentication yet
 
 This endpoint returns identity, knowledge-base scope, and retrieved chunks — no secrets, but it is a write-free integration surface intended for local/MVP use. If you deploy this app or otherwise expose it beyond your own machine, add authentication (an API key, at minimum) before doing so.

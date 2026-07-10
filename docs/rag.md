@@ -32,10 +32,13 @@ Only step 3's `APPROVED` chunks (belonging to an `APPROVED` document) are ever s
 
 ## Feedback and evaluation
 
-- `add_feedback` records a rating (`GOOD`, `BAD`, `INCOMPLETE`, `UNSAFE`, `OUTDATED`) tied to a question/answer or a specific chunk/document. Use this to capture what didn't work.
-- `create_eval_case` records a question with an expected answer/sources, for building a regression test set as the knowledge base grows.
+- `add_feedback` records a rating (`GOOD`, `BAD`, `INCOMPLETE`, `UNSAFE`, `OUTDATED`) tied to a question/answer or a specific chunk/document. Use this to capture what did or did not work.
+- `get_feedback_summary`, `list_feedback_page`, and `get_feedback_case` provide a token-efficient MCP-only review flow: summarize first, page compact records second, and inspect full details only by ID.
+- `create_eval_case` records a test question with an expected answer/sources, for building a regression test set as the knowledge base grows.
+- `create_eval_case_from_feedback` turns a reviewed feedback item into an eval case with explicit user approval.
+- `mark_feedback_resolved` closes the operational feedback review loop without changing live knowledge.
 
-Continuous improvement is meant to be human-reviewed end to end: capture feedback → have a reviewer approve corrections → add them back into the knowledge base → keep rejected answers as eval cases.
+Continuous improvement is meant to be human-reviewed end to end: capture feedback → summarize/page feedback through MCP → inspect a specific case → create evals or propose corrections → approve corrections through the existing RAG/harness review workflow → mark feedback resolved. See [Feedback Review Loop](feedback-review-loop.md).
 
 ## Assistant identity is not knowledge
 

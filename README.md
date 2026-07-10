@@ -41,7 +41,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open `http://localhost:3000`. Make sure [Ollama](https://ollama.com) is running locally with the model from your `.env` pulled (default `qwen2.5:7b-instruct`).
+Open `http://localhost:3000`. The web testing surface is disabled by default; set `ENABLE_TESTING_SURFACE=true` in `.env` to expose the chat, collections, harness, feedback, RAG, and Ollama testing routes locally. Keep it unset or `false` for Vercel/public deployments until authentication is in place. Make sure [Ollama](https://ollama.com) is running locally with the model from your `.env` pulled (default `qwen2.5:7b-instruct`).
 
 To let an assistant manage the knowledge base, connect the MCP server — see [docs/mcp-server.md](docs/mcp-server.md).
 
@@ -60,12 +60,15 @@ Today, approving, editing, and archiving knowledge happens through raw MCP tool 
 Full documentation lives in [`docs/`](docs/), organized by topic:
 
 - [Project Overview](docs/overview.md)
+- [Operating Modes](docs/operating-modes.md)
 - [Repository Structure](docs/repository-structure.md)
 - [System Architecture](docs/architecture.md)
 - [Database & Prisma](docs/database.md)
 - [RAG Architecture](docs/rag.md)
+- [Feedback Review Loop](docs/feedback-review-loop.md)
 - [MCP Server](docs/mcp-server.md)
 - [API Routes](docs/api-routes.md)
+- [Testing Surface](docs/testing-surface.md)
 - [Environment Variables](docs/environment-variables.md)
 - [Development Workflow](docs/development-workflow.md)
 - [Testing](docs/testing.md)
