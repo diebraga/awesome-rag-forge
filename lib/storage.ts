@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const REQUIRED_STORAGE_ENV_VARS = [
@@ -47,6 +47,16 @@ export async function uploadFileToStorage(key: string, body: Buffer, contentType
       Key: key,
       Body: body,
       ContentType: contentType,
+    }),
+  );
+}
+
+export async function deleteFileFromStorage(key: string) {
+  const client = getStorageClient();
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: process.env.STORAGE_BUCKET!,
+      Key: key,
     }),
   );
 }

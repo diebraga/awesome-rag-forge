@@ -10,6 +10,17 @@ npm run mcp:rag-manager
 
 This starts the server on stdio transport, which is how local MCP clients (Claude Desktop, Codex CLI, etc.) expect to talk to it.
 
+### HTTP transport (for a web-based client, e.g. a future review dashboard)
+
+```bash
+npm run mcp:rag-manager:http
+```
+
+Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (the `server` instance is exported and reused, see `mcp/rag-manager/http.ts`) — over `StreamableHTTPServerTransport` at `http://127.0.0.1:3200/mcp` instead of stdio. Use this only when a client can't be spawned as a stdio subprocess (a web page, for instance); stdio remains the default and the only transport Claude Desktop/Cursor/etc. need.
+
+- **Bound to `127.0.0.1` by default, on purpose.** Override with `MCP_HTTP_HOST`/`MCP_HTTP_PORT`, but this server has full read/write access to the knowledge base (see [Security Considerations](security.md#mcp-server-trust-boundary)) — widening the bind address means putting real authentication in front of it first, not just changing an env var. There is no auth on this transport today.
+- Both entry points share one tool registry — a tool added to `mcp/rag-manager/server.ts` is automatically available over both transports; there is nothing HTTP-specific to update per tool.
+
 ## Tools
 
 | Tool | Writes to DB? | Purpose |
@@ -21,6 +32,9 @@ This starts the server on stdio transport, which is how local MCP clients (Claud
 | `propose_source_insert` | **No** | Analyze source text and propose collection/document/chunk plan. |
 | `approve_source_insert` | Yes (if approved) | Persist a proposal, but only when `userApproval: true`. |
 | `attach_document_file` | Yes (if storage configured and approved) | Record a `storageKey` for an original file; refuses if storage env vars are missing or `userApproval` isn't `true`. |
+| `archive_document` | Yes (if approved) | Archive a document and its chunks (`status: ARCHIVED`), optionally deleting its stored file, only when `userApproval: true`. Never hard-deletes rows. |
+| `propose_chunk_update` | **No** | Show a before/after diff for a correction to an existing chunk's text. Does not write. |
+| `approve_chunk_update` | Yes (if approved) | Persist the correction, only when `userApproval: true`. Resets the chunk to `PENDING_REVIEW` if it was `APPROVED`. |
 | `propose_file_upload` | **No** | Extract text from an uploaded PDF (OCR fallback for scanned pages) and propose a document/chunk plan. Does not upload anything to storage. |
 | `approve_file_upload` | Yes (if approved) | Persist the proposal's document/chunks as `PENDING_REVIEW`, only when `userApproval: true`. Also uploads the original file to storage — requiring storage to be configured — only when `storeOriginalFile: true`; the caller must have asked the user which mode they want. |
 | `list_pending_reviews` | No | List documents/chunks awaiting review. |
@@ -69,6 +83,23 @@ For the common case of "here's a PDF, extract its knowledge and (maybe) keep the
 
 Every `RagChunk`/`RagSource` created this way carries a `pageNumber`, so citations and future review UIs can point at the exact page rather than just the document as a whole. `RagDocument.metadata.fileStored` records which mode was used.
 
+## Removing knowledge: `archive_document`
+
+There is no `delete_document` tool, deliberately. `archive_document` is the only supported way to take a document out of use, and it never hard-deletes a database row — it sets `RagDocument.status` and all of its chunks' `status` to `ARCHIVED`, which every read path (`lib/rag/retrieval.ts`, `lib/rag/collections.ts`, the download route) already filters out by requiring `status: "APPROVED"`. Soft-deleting this way keeps `RagReview` and `RagFeedback` history intact instead of cascading them away, which is the whole point — you can see *that* something was archived and *why*, not just watch it vanish.
+
+- Requires `reason: string` (non-empty) — every archive action is self-documenting, recorded into `RagDocument.metadata.archivedReason`/`archivedAt`.
+- Requires `userApproval: true` like every other write tool — refuses otherwise. This can modify an already-`APPROVED`, live document, so confirm with the user which document and why before calling it, the same way `attach_document_file` does.
+- `deleteStoredFile: boolean` (default `false`) controls whether the original file is also permanently removed from the bucket via `deleteFileFromStorage()`. If there's no stored file, or storage isn't configured, this is a no-op with a warning in the response rather than a hard failure — the document still gets archived either way. The database update always runs first; if the storage delete fails afterward, the response includes a warning instead of rolling back the archive, since a failed bucket cleanup is just an orphaned object (the document is already unreachable through every read path), never a broken link or an inconsistent state.
+
+## Correcting knowledge: `propose_chunk_update` → `approve_chunk_update`
+
+For fixing a typo, updating a stale fact, or otherwise correcting a chunk's text without archiving and re-adding the whole document:
+
+1. `propose_chunk_update` — read-only. Takes `chunkId` and the corrected `chunkText` (and optionally `sectionTitle`), loads the existing chunk, and returns a `before`/`after` diff (old text, new text, old/new token counts) plus `willReenterReview: true` if the chunk is currently `APPROVED`. Shows the reviewer exactly what's changing before anything is written.
+2. `approve_chunk_update` — takes the same `chunkId`/`chunkText`/`sectionTitle` plus `userApproval: true`. Refuses otherwise. Updates the chunk's text and token count, and — the important part — **if the chunk was `APPROVED`, its status resets to `PENDING_REVIEW`.** An edited fact is not the same fact as the one that was originally reviewed; it doesn't inherit that approval. A human must run `approve_chunk` again after an edit, exactly as if it were new. The parent `RagDocument` and its other chunks are untouched — only the edited chunk drops out of the live chat until re-approved.
+
+Every edit is logged as a `RagReview` row (`status: PENDING`) with the old and new text in `notes`, so there's a record of what changed, not just that something did.
+
 ## Assistant identity: `set_assistant_name`
 
 `set_assistant_name` writes directly to `AssistantConfig` (no propose/approve step — it's configuration, not knowledge). It is the only supported way to:
@@ -113,4 +144,6 @@ Add an entry pointing at this repo's checkout, for example (Claude Desktop `clau
 - "Upload this PDF to the knowledge base." (with a file attached)
 - "Search what we know about onboarding."
 - "Approve this pending chunk."
+- "Fix the typo in this chunk." / "Update this fact — the warranty is now 3 years, not 5."
+- "Archive this document, it's outdated."
 - "Create an eval case for [question]."

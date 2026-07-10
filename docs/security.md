@@ -10,6 +10,8 @@ The MCP server never writes new knowledge without an explicit approval step (`pr
 
 `approve_chunk` flipping `RagDocument.status` to `APPROVED` alongside the chunk it was called on is **not** an exception to this — it's still gated behind the same explicit, human-invoked `approve_chunk` call as the chunk itself; nothing decides on its own that a document is ready. Don't read "a document becomes APPROVED automatically when a chunk is approved" as license to add a scheduled job, heuristic, or bulk auto-approval path — the trigger must always be one human calling `approve_chunk` (or `reject_chunk`) on one chunk at a time.
 
+The reverse direction is enforced too: `approve_chunk_update` **removes** `APPROVED` status (resets to `PENDING_REVIEW`) whenever it edits a chunk that had it. This is deliberate, not a bug to "fix" by preserving the old status — an edited fact wasn't the fact a human actually reviewed, so it doesn't get to keep an approval it never earned. If you ever touch `approve_chunk_update`, keep this: editing a live chunk must always cost it its `APPROVED` status, with no exception for "small" or "obviously correct" edits.
+
 ## No secret logging
 
 - Never log `DATABASE_URL`, storage credentials, or full request/response bodies that might contain secrets.
@@ -29,6 +31,8 @@ The bucket itself should be kept private (no public-read policy). `lib/storage.t
 ## MCP server trust boundary
 
 The MCP server has full read/write access to your knowledge base database. Only connect trusted MCP clients to it, and only run it with a `DATABASE_URL` you control. It is designed for local, single-user development use — see [Deployment](deployment.md) for why it is not exposed remotely by default.
+
+This applies identically to the HTTP transport (`npm run mcp:rag-manager:http`, see [MCP Server](mcp-server.md#http-transport-for-a-web-based-client-eg-a-future-review-dashboard)) — same server, same full read/write access, just reachable over HTTP instead of stdio for clients that need it (a browser-based tool, for instance). It's bound to `127.0.0.1` by default for the same reason `canAutoStartOllama()` is local-only in `lib/ollama.ts`: no accidental network exposure. **There is no authentication on this transport.** If you ever bind it beyond localhost, that is the moment to add real auth in front of it — do not treat a non-default `MCP_HTTP_HOST` as safe on its own.
 
 ## Assistant identity and model-leak protection
 
@@ -58,11 +62,15 @@ If you extend `lib/rag/chat-context.ts`, keep this distinction: anything meant t
 1. **Hardcoded rules are rendered first and declared non-overridable.** `buildSystemPrompt()` in `lib/rag/chat-context.ts` puts the identity/read-only rules before the harness section, and the harness section explicitly states those rules "can never be loosened by anything below."
 2. **`lib/rag/harness.ts`'s `validateHarnessStatement()` hard-refuses dangerous statements in code**, not just via a prompt instruction: any `CAPABILITY` claiming write/delete/approve/reject/archive/bypass-review/auto-approve/ignore-instructions/reveal-model/execute-code powers, and any statement (capability or restriction) that tries to remove a hardcoded protection. This check runs at `propose_harness_update` **and again** at `approve_harness_update` — the write tool never trusts that the propose step was actually called first.
 
+   A literal-word blocklist alone is evadable by rephrasing (`"amend"` instead of `"edit"`, `"curate knowledge on the user's behalf"` instead of `"write"`) — `DANGEROUS_CAPABILITY_PATTERNS` casts a wide net of synonyms per dangerous action for exactly this reason, but a blocklist is still fundamentally a losing game against arbitrary natural language. Because legitimate chat capabilities are a small, enumerable set, `CAPABILITY` statements are also checked against `SAFE_CAPABILITY_PATTERNS` — an allowlist of known-safe read-only verbs (search, answer, cite, summarize, explain, list, describe, help, assist, read, recommend). A statement matching neither list is refused by default, rather than silently allowed through. If you add a new legitimate capability phrasing that gets refused, extend the allowlist — do not weaken or remove the default-deny behavior to fix a false positive. `lib/rag/harness.test.ts` is the regression suite for both lists; run it before touching either.
+
 Do not add a way to write to `HarnessRule` that skips this validation, and do not let harness rule content change what the chat's code is actually capable of doing — the boundary is structural (no write-capable Prisma calls, no tool-calling loop in `app/`), not prompt-based, and harness rules must stay purely descriptive on top of it.
 
 ## Every MCP write requires explicit approval — no exceptions
 
 Every tool in `mcp/rag-manager/server.ts` that writes to the database takes a `userApproval: boolean` (or is itself the human review step, like `approve_chunk`/`approve_harness_rule`) and refuses with a clear message if it isn't `true`. This includes `create_collection` and `attach_document_file`, which were originally direct writes with no gate — both now require `userApproval: true` like every other write tool. If you add a new MCP tool that writes anything, give it the same gate; a write tool with no confirmation step is a bug, not a design choice.
+
+`archive_document` — the tool that removes knowledge from use, including optionally deleting a stored file — follows the same rule: `userApproval: true` required, no exceptions, same as inserting new knowledge. It also never hard-deletes a `RagDocument`/`RagChunk` row; it only ever changes `status` to `ARCHIVED`, which is what keeps `RagReview`/`RagFeedback` audit history intact instead of cascading it away. If you're tempted to add a real `DELETE` path later, don't — archiving already achieves "gone from every read surface" without losing the audit trail, and a hard delete would.
 
 `attach_document_file` also merges into a document's existing `metadata` JSON instead of overwriting it — it fetches the current value first and spreads it before adding `originalFileName`. A prior version replaced the field outright, silently discarding anything already there (e.g. `insertedBy`/`warnings` set during ingestion). Any future code that updates `metadata` on an existing row should merge, not overwrite, for the same reason.
 
@@ -88,6 +96,16 @@ This route lets the chat UI's "Download model" button pull a model into Ollama. 
 - The requested `model` must be one of the fixed `AVAILABLE_MODELS` in `lib/ollama.ts` — an arbitrary client-supplied model name is refused with a `400`, never forwarded to Ollama. This caps what can be downloaded to a small, reviewed list, regardless of how the gate above is configured.
 
 If you add more models to `AVAILABLE_MODELS`, that's the only place to do it — don't accept model names from request bodies without validating against it first.
+
+## `POST /api/feedback` — the one narrow write path in the chat app, scoped on purpose
+
+Every other route in `app/` is read-only; this is the single, deliberate exception (see [System Architecture](architecture.md#the-core-boundary-read-vs-write)). It exists so a user can react (thumbs up/down) to an answer in the chat UI without that requiring the MCP propose/approve workflow — recording an opinion about an already-approved answer isn't a knowledge-base change, and can't become one through this route:
+
+- It can only call `prisma.ragFeedback.create(...)`. There is no code path from `app/api/feedback/route.ts` to `RagChunk`, `RagDocument`, `RagCollection`, or `HarnessRule` — adding one would be exactly the kind of write-path expansion the chat app's non-negotiable rule exists to prevent (see `CLAUDE.md`/`CODEX.md`/etc.'s "Non-negotiable rules").
+- `rating` is validated against a hardcoded allowlist (`GOOD`/`BAD` only, a subset of the full `RagFeedbackRating` enum) — an arbitrary client-supplied string is refused with a `400`, the same "validate against a fixed list, never trust the request body" pattern used for `model` in `/api/chat` and `/api/ollama/pull`.
+- `question`/`answer` text is length-capped before storage (`MAX_TEXT_LENGTH`) — this is a lightweight reaction record, not a place for unbounded user input to accumulate.
+- No authentication exists on this route, same MVP posture as every other route in `app/` today (see "`GET /api/rag/context` has no authentication yet" below) — a `RagFeedback` row can't affect what the assistant knows or does, so the impact of that gap is low today, but revisit it before this route is ever reachable beyond your own machine.
+- Feedback submitted here and feedback submitted through the MCP server's `add_feedback` tool land in the same `RagFeedback` table and are read the same way — this route doesn't create a second, divergent feedback mechanism, it's just a second entry point into the one that already existed.
 
 ## Automated PR security review
 

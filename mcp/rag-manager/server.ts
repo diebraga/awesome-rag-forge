@@ -13,8 +13,14 @@ import {
   toRagSourceType,
 } from "./proposal";
 import { extractTextFromPdf, looksLikePdf } from "./extraction";
+import { estimateTokens } from "./chunking";
 import { disconnectPrisma, prisma } from "./prisma";
-import { isStorageConfigured, STORAGE_NOT_CONFIGURED_MESSAGE, uploadFileToStorage } from "../../lib/storage";
+import {
+  isStorageConfigured,
+  STORAGE_NOT_CONFIGURED_MESSAGE,
+  uploadFileToStorage,
+  deleteFileFromStorage,
+} from "../../lib/storage";
 import { buildHarnessProposal } from "../../lib/rag/harness";
 
 // Whole-file base64 round-trips through the calling model's context twice
@@ -22,7 +28,11 @@ import { buildHarnessProposal } from "../../lib/rag/harness";
 // ~15MB of raw PDF bytes.
 const MAX_UPLOAD_BASE64_CHARS = 20_000_000;
 
-const server = new McpServer({
+// Exported so mcp/rag-manager/http.ts can reuse this exact instance (all
+// tools registered below) over a different transport, without duplicating
+// tool registration or running this file's own stdio bootstrap at the
+// bottom (guarded by the isMainModule check).
+export const server = new McpServer({
   name: "rag-manager-mcp",
   title: "RAG Manager MCP",
   version: "0.1.0",
@@ -528,6 +538,190 @@ server.registerTool(
 );
 
 server.registerTool(
+  "archive_document",
+  {
+    title: "Archive document",
+    description:
+      "Archive a document (and its chunks) so it is no longer used by the live chat or downloadable, optionally deleting its stored original file from the bucket. This can modify an already-APPROVED, live document — always confirm with the user which document and why before calling this with userApproval: true; refuses otherwise. Archiving is the only supported way to remove knowledge; it never hard-deletes database rows, preserving the review/audit history (RagReview, RagFeedback stay intact).",
+    inputSchema: {
+      documentId: z.string(),
+      reason: z.string().min(1),
+      deleteStoredFile: z.boolean().default(false),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ documentId, reason, deleteStoredFile, userApproval }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before archiving a document.");
+    }
+
+    const existing = await prisma.ragDocument.findUniqueOrThrow({
+      where: { id: documentId },
+      select: { storageKey: true, metadata: true },
+    });
+    const existingMetadata =
+      existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+        ? (existing.metadata as Record<string, unknown>)
+        : {};
+
+    const willDeleteFile = deleteStoredFile && Boolean(existing.storageKey) && isStorageConfigured();
+    const warnings: string[] = [];
+    if (deleteStoredFile && !existing.storageKey) {
+      warnings.push("deleteStoredFile was true, but this document has no stored file to delete.");
+    }
+    if (deleteStoredFile && existing.storageKey && !isStorageConfigured()) {
+      warnings.push(`${STORAGE_NOT_CONFIGURED_MESSAGE} The file was not deleted; the document was still archived.`);
+    }
+
+    // Archive the DB rows first, then best-effort delete the S3 object.
+    // If the S3 delete fails after this, the document is already archived
+    // and its download route is already unreachable (APPROVED-only), so a
+    // failed delete only means an orphaned bucket object — never a broken
+    // link or an inconsistent document state.
+    const result = await prisma.$transaction(async (tx) => {
+      const document = await tx.ragDocument.update({
+        where: { id: documentId },
+        data: {
+          status: "ARCHIVED",
+          storageKey: willDeleteFile ? null : undefined,
+          metadata: {
+            ...existingMetadata,
+            archivedReason: reason,
+            archivedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      const { count: archivedChunkCount } = await tx.ragChunk.updateMany({
+        where: { documentId, status: { not: "ARCHIVED" } },
+        data: { status: "ARCHIVED" },
+      });
+
+      return { document, archivedChunkCount };
+    });
+
+    if (willDeleteFile) {
+      try {
+        await deleteFileFromStorage(existing.storageKey!);
+      } catch (error) {
+        warnings.push(
+          `Document archived, but deleting the stored file failed: ${
+            error instanceof Error ? error.message : "unknown error"
+          }. It may need manual cleanup in the bucket.`,
+        );
+      }
+    }
+
+    return jsonResult({
+      ...result,
+      warnings,
+      message:
+        "Document archived. It is no longer used by the live chat and its file (if any) is no longer downloadable. Database rows were preserved, not hard-deleted, for audit history.",
+    });
+  },
+);
+
+server.registerTool(
+  "propose_chunk_update",
+  {
+    title: "Propose chunk update",
+    description:
+      "Analyze a correction to an existing chunk's text and show a before/after diff. This tool does not write to the database. Use this instead of archiving and re-adding a document when you only need to fix or update part of its content.",
+    inputSchema: {
+      chunkId: z.string(),
+      chunkText: z.string().min(1),
+      sectionTitle: z.string().optional(),
+    },
+  },
+  async ({ chunkId, chunkText, sectionTitle }) => {
+    const existing = await prisma.ragChunk.findUniqueOrThrow({
+      where: { id: chunkId },
+      select: { chunkText: true, sectionTitle: true, status: true, tokenCount: true },
+    });
+
+    const newTokenCount = estimateTokens(chunkText);
+    const willReenterReview = existing.status === "APPROVED";
+
+    return jsonResult({
+      chunkId,
+      before: {
+        chunkText: existing.chunkText,
+        sectionTitle: existing.sectionTitle,
+        tokenCount: existing.tokenCount,
+        status: existing.status,
+      },
+      after: {
+        chunkText,
+        sectionTitle: sectionTitle ?? existing.sectionTitle,
+        tokenCount: newTokenCount,
+      },
+      willReenterReview,
+      requiredUserQuestion: willReenterReview
+        ? "Do you want me to save this correction? Since this chunk is currently APPROVED and live in the chat, editing it will move it back to PENDING_REVIEW until a human approves the new text."
+        : "Do you want me to save this correction to the knowledge base?",
+      writesToDatabase: false,
+    });
+  },
+);
+
+server.registerTool(
+  "approve_chunk_update",
+  {
+    title: "Approve chunk update",
+    description:
+      "Persist a previously proposed chunk correction. Refuses to write unless userApproval is true. If the chunk was APPROVED and live in the chat, its status is reset to PENDING_REVIEW — an edited fact is not the same fact and does not inherit the old approval. The document itself, and its other chunks, are left untouched.",
+    inputSchema: {
+      chunkId: z.string(),
+      chunkText: z.string().min(1),
+      sectionTitle: z.string().optional(),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ chunkId, chunkText, sectionTitle, userApproval }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before saving a chunk correction.");
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.ragChunk.findUniqueOrThrow({
+        where: { id: chunkId },
+        select: { chunkText: true, sectionTitle: true, status: true, documentId: true },
+      });
+
+      const wasApproved = existing.status === "APPROVED";
+
+      const chunk = await tx.ragChunk.update({
+        where: { id: chunkId },
+        data: {
+          chunkText,
+          sectionTitle: sectionTitle ?? existing.sectionTitle,
+          tokenCount: estimateTokens(chunkText),
+          status: wasApproved ? "PENDING_REVIEW" : existing.status,
+        },
+      });
+
+      const review = await tx.ragReview.create({
+        data: {
+          chunkId,
+          documentId: existing.documentId,
+          status: "PENDING",
+          notes: `Edited via approve_chunk_update. Before: ${JSON.stringify(existing.chunkText)} — After: ${JSON.stringify(chunkText)}`,
+        },
+      });
+
+      return { chunk, review, wasApproved };
+    });
+
+    return jsonResult({
+      ...result,
+      message: result.wasApproved
+        ? "Chunk updated and moved back to PENDING_REVIEW. A human reviewer must approve it again before the live chat uses the new text."
+        : "Chunk updated. It was not previously APPROVED, so its review status is unchanged.",
+    });
+  },
+);
+
+server.registerTool(
   "list_pending_reviews",
   {
     title: "List pending reviews",
@@ -882,22 +1076,29 @@ server.registerTool(
   },
 );
 
-process.on("SIGINT", async () => {
-  await disconnectPrisma();
-  process.exit(0);
-});
-
-process.on("SIGTERM", async () => {
-  await disconnectPrisma();
-  process.exit(0);
-});
-
 async function main() {
   await server.connect(new StdioServerTransport());
 }
 
-main().catch(async (error) => {
-  console.error(error);
-  await disconnectPrisma();
-  process.exit(1);
-});
+// Only run the stdio bootstrap when this file is the actual entry point
+// (`npm run mcp:rag-manager`) — not when http.ts imports { server } from
+// here to run the same tools over a different transport.
+const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+
+if (isMainModule) {
+  process.on("SIGINT", async () => {
+    await disconnectPrisma();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", async () => {
+    await disconnectPrisma();
+    process.exit(0);
+  });
+
+  main().catch(async (error) => {
+    console.error(error);
+    await disconnectPrisma();
+    process.exit(1);
+  });
+}

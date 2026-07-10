@@ -35,6 +35,10 @@ lib/
                               APPROVED-only data for the Collections pages. The
                               Harness page reuses getAssistantConfig() (chat-context.ts)
                               and getApprovedHarnessRules() (harness.ts) directly instead.
+  chat-providers/          Swappable chat LLM backend (see docs/mcp-server.md's LLM provider note)
+    types.ts                 ChatProvider interface — app/api/chat/route.ts only talks to this
+    ollama.ts                 Default/only implementation today, wraps lib/ollama.ts's calls
+    index.ts                   getChatProvider() — reads CHAT_PROVIDER, defaults to "ollama"
   prisma.ts               Prisma client for the Next.js app (server-only)
   storage.ts               Gates document-attachment features behind storage env vars
   ollama.ts                 Ollama connection config + local-only auto-start logic
@@ -42,9 +46,14 @@ lib/
 
 mcp/
   rag-manager/            Isolated MCP server for managing the knowledge base and harness
-    server.ts               Tool registrations (list, propose, approve, review, feedback, eval, harness)
-    proposal.ts              Builds and validates source-insert proposals
-    chunking.ts               Paragraph-based MVP chunking
+    server.ts               Tool registrations (list, propose, approve, review, feedback, eval, harness);
+                              exports `server` so http.ts can reuse the same tool registry
+    http.ts                   Optional HTTP transport (npm run mcp:rag-manager:http), localhost-only
+                              by default — same tools as stdio, for clients that can't spawn a
+                              stdio subprocess (e.g. a future review dashboard)
+    extraction.ts              PDF text extraction (pdf-parse) + OCR fallback (tesseract.js)
+    proposal.ts              Builds and validates source-insert / file-upload proposals
+    chunking.ts               Paragraph-based and page-aware chunking; estimateTokens() is shared
     prisma.ts                 Prisma client for the MCP server (separate from lib/prisma.ts)
     README.md                  MCP-specific usage notes
 
@@ -54,12 +63,19 @@ prisma/
   seed.ts                  Seeds a sample collection, default assistant name, and default harness rules
 
 docs/                     Modular documentation (this directory)
-CLAUDE.md                 Entry point for Claude Code sessions
-CODEX.md                  Entry point for Codex sessions
-AGENTS.md                 Project-specific coding notes shared by both assistants
+CLAUDE.md                 Entry point for Claude Code / Claude Desktop sessions
+CODEX.md                  Entry point for OpenAI Codex CLI sessions
+GEMINI.md                 Entry point for Gemini CLI sessions
+.cursorrules              Entry point for Cursor sessions
+.windsurfrules            Entry point for Windsurf sessions
+.github/copilot-instructions.md  Entry point for GitHub Copilot sessions
+.clinerules               Entry point for Cline sessions
+AGENTS.md                 Project-specific coding notes shared by every assistant above
 README.md                 Human-facing quick start
 .env.example              Documented environment variables (no secrets)
 ```
+
+All seven assistant entry-point files carry identical content (documentation index, prerequisites/setup instructions, non-negotiable rules) — each is just a thin, auto-loaded pointer into `docs/` for its respective tool, kept in sync by hand. If you change one, change all seven.
 
 ## Why `lib/rag/` is its own folder
 

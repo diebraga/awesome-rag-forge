@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Download, SendHorizontal, User } from "lucide-react";
+import { Check, Copy, Download, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,7 +17,11 @@ type ChatMessage = {
   role: "bot" | "user";
   text: string;
   sources?: ChatSource[];
+  question?: string;
+  isGreeting?: boolean;
 };
+
+type FeedbackRating = "GOOD" | "BAD";
 
 type OllamaStatusResponse = {
   ok: boolean;
@@ -35,6 +39,7 @@ const initialMessages: ChatMessage[] = [
     id: 1,
     role: "bot",
     text: "Hi. I am connected to a local model and an approved RAG knowledge base. Ask a question and I will answer using retrieved context when it is available.",
+    isGreeting: true,
   },
 ];
 
@@ -73,6 +78,9 @@ export default function Home() {
   const [pullPhase, setPullPhase] = useState<"downloading" | "finalizing">("downloading");
   const [pullStatusText, setPullStatusText] = useState<string | null>(null);
   const [pullError, setPullError] = useState<string | null>(null);
+
+  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<number, FeedbackRating>>({});
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -247,6 +255,7 @@ export default function Home() {
             data.error ??
             "The local model did not return a response.",
           sources: data.reply ? data.sources : undefined,
+          question: data.reply ? question : undefined,
         },
       ]);
 
@@ -270,6 +279,38 @@ export default function Home() {
       checkOllamaStatus();
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function submitFeedback(message: ChatMessage, rating: FeedbackRating) {
+    setFeedbackByMessage((current) => ({ ...current, [message.id]: rating }));
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: message.question,
+          answer: message.text,
+          rating,
+          documentIds: message.sources?.map((source) => source.documentId),
+        }),
+      });
+    } catch {
+      // Best-effort — feedback isn't on the critical path, so a failed
+      // submission shouldn't interrupt or alarm the user.
+    }
+  }
+
+  async function copyMessageText(message: ChatMessage) {
+    try {
+      await navigator.clipboard.writeText(message.text);
+      setCopiedMessageId(message.id);
+      setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? null : current));
+      }, 1500);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context) — silently
+      // no-op rather than showing an error for a non-critical convenience.
     }
   }
 
@@ -443,6 +484,46 @@ export default function Home() {
                             {source.title}
                           </a>
                         ))}
+                    </div>
+                  )}
+                  {message.role === "bot" && !message.isGreeting && (
+                    <div className="mt-2 flex items-center gap-1 whitespace-normal">
+                      <button
+                        type="button"
+                        onClick={() => copyMessageText(message)}
+                        aria-label="Copy message"
+                        className="inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"
+                      >
+                        {copiedMessageId === message.id ? (
+                          <Check className="size-3.5" />
+                        ) : (
+                          <Copy className="size-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => submitFeedback(message, "GOOD")}
+                        aria-label="Good response"
+                        className={
+                          feedbackByMessage[message.id] === "GOOD"
+                            ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600"
+                            : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"
+                        }
+                      >
+                        <ThumbsUp className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => submitFeedback(message, "BAD")}
+                        aria-label="Bad response"
+                        className={
+                          feedbackByMessage[message.id] === "BAD"
+                            ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600"
+                            : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"
+                        }
+                      >
+                        <ThumbsDown className="size-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>

@@ -1,6 +1,6 @@
 # API Routes
 
-Both routes below are **read-only**. Neither one, nor anything else in `app/`, writes to the database. See [System Architecture](architecture.md) for the enforced read/write boundary.
+Every route below is **read-only** except `POST /api/feedback`, which is a single, deliberately narrow exception — it can create a `RagFeedback` row and nothing else. See [System Architecture](architecture.md) for the enforced read/write boundary and why that one route exists.
 
 ## `POST /api/chat`
 
@@ -12,15 +12,15 @@ Request body:
 { "messages": [{ "role": "user", "text": "..." }], "model": "llama3.1:8b" }
 ```
 
-`model` is optional and validated against the fixed `AVAILABLE_MODELS` allowlist in `lib/ollama.ts` — an unrecognized value silently falls back to `OLLAMA_MODEL`, it's never passed through to Ollama unchecked.
+`model` is optional and validated against the active `ChatProvider`'s own allowlist (`lib/chat-providers/`; for the default Ollama provider, that's `AVAILABLE_MODELS` in `lib/ollama.ts`) — an unrecognized value silently falls back to the provider's default model, it's never passed through unchecked.
 
 Behavior:
 
 1. Calls `buildAssistantContext()` from [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) to get the assistant's identity/read-only/harness system prompt, knowledge-base scope stats, retrieved RAG context, and structured citations.
-2. Calls Ollama's `/api/chat` with `stream: false`, using that system prompt and the requested (or default) model.
+2. Calls `getChatProvider().chat(...)` (`lib/chat-providers/index.ts`) with that system prompt and the requested (or default) model. The route itself is provider-agnostic — it doesn't know or care whether the reply came from Ollama or something else; see [System Architecture](architecture.md) and the README's "LLM provider" section for the abstraction. `CHAT_PROVIDER` (env var, defaults to `ollama`) selects which provider runs.
 3. Returns `{ reply, model, sources }` — `model` here is the assistant's configured **name** (e.g. `"Archivist"`), never the underlying model/provider string, so the real backend is not leaked through the API response either. `sources` is the deduped list of `APPROVED` documents whose chunks were retrieved for this request: `[{ documentId, title, downloadable }]`. `downloadable` is `true` only when the document has a stored original file — the UI uses it to decide whether to render a download link, and it's the only place a `storageKey` value's *existence* is exposed (the key itself never is). See `GET /api/rag/documents/[id]/download` below.
 
-Error handling: a `404` from Ollama (model not pulled) returns a clear message pointing at the model dropdown; a connection failure (Ollama not running, or it went down mid-session) returns `503` with a message telling the user to reconnect, rather than a raw fetch exception. See `app/api/chat/route.ts`.
+Error handling: each `ChatProvider.chat()` call returns a structured `{ ok: false, status, error }` result instead of throwing for expected failure modes — for the default Ollama provider, that's a `502` with a clear message when the model isn't pulled, and a `503` telling the user to reconnect if Ollama isn't reachable, rather than a raw fetch exception reaching the client. See `app/api/chat/route.ts` and `lib/chat-providers/ollama.ts`.
 
 ## `GET /api/rag`
 
@@ -202,6 +202,23 @@ This is deliberate: a production deployment must never let a visitor's browser r
 
 If Ollama isn't installed, the underlying `ollama` binary lookup fails and this returns a clear error (`"Ollama is not installed on this machine..."`) instead of a generic failure. See `lib/ollama.ts` and `app/api/ollama/start/route.ts`.
 
+## `POST /api/feedback`
+
+Records a thumbs up/down reaction to a chat answer. The **only** database write anywhere in `app/` — see [Security Considerations](security.md#post-apifeedback--the-one-narrow-write-path-in-the-chat-app-scoped-on-purpose) for why it's safe to be an exception and what stops it from becoming a bigger one.
+
+Request body:
+
+```json
+{ "question": "What does this project do?", "answer": "...", "rating": "GOOD", "documentIds": ["doc_abc123"] }
+```
+
+- `rating` must be `"GOOD"` or `"BAD"` — anything else is refused with a `400`. This is a subset of the full `RagFeedbackRating` enum (`GOOD`/`BAD`/`INCOMPLETE`/`UNSAFE`/`OUTDATED`); the chat UI only ever exposes two reactions, so this route only ever accepts those two.
+- `question`/`answer` are optional but expected from the chat UI; both are truncated to a bounded length before storage.
+- `documentIds` is optional — the chat UI passes the `documentId`s of any cited sources (from the reply's `sources` array), stored in `RagFeedback.metadata.citedDocumentIds` for context, capped at 10 entries.
+- Writes a `RagFeedback` row and returns `{ ok: true, id }`. This is the **only** table this route can write to — it has no code path to `RagChunk`/`RagDocument`/`RagCollection`/`HarnessRule`.
+
+See `app/api/feedback/route.ts`.
+
 ## No knowledge-base write endpoints
 
-`POST /api/ollama/start` is the one `POST` route in `app/`, and it does not touch the database or the knowledge base at all — it only ever attempts to launch a local process on the machine it's already running on, and only in local dev. There is intentionally no endpoint that writes knowledge over HTTP, and there never should be. The chat app is a retrieval viewer only — it exists to test that retrieval works and to demonstrate the current knowledge base, not to manage it. All knowledge writes go through the MCP server's approval-gated tools — see [MCP Server](mcp-server.md).
+`POST /api/ollama/start` and `POST /api/feedback` are the two `POST` routes in `app/` that do anything beyond reading. Neither writes knowledge: `/api/ollama/start` only ever attempts to launch a local process, never touches Prisma; `/api/feedback` only ever creates a `RagFeedback` row, an end-user reaction to an already-approved answer, not a change to what the assistant knows or does. There is intentionally no endpoint that writes actual knowledge over HTTP, and there never should be. The chat app is a retrieval viewer, plus this one narrow feedback-capture exception — it does not manage the knowledge base. All knowledge writes go through the MCP server's approval-gated tools — see [MCP Server](mcp-server.md).

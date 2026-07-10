@@ -9,7 +9,7 @@ export type ProposedChunk = {
   pageNumber?: number;
 };
 
-function estimateTokens(text: string) {
+export function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(text.trim().split(/\s+/).length * 1.3));
 }
 
