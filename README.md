@@ -14,7 +14,7 @@ A local-first RAG knowledge-base builder managed through an MCP server, with a r
 ![Postgres](https://img.shields.io/badge/Postgres-pgvector-4169e1)
 ![MCP](https://img.shields.io/badge/MCP-local%20server-6f42c1)
 ![Vitest](https://img.shields.io/badge/tests-Vitest-6e9f18)
-![License](https://img.shields.io/badge/license-not%20set-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ## AI Assistant Setup Checklist
 
@@ -182,6 +182,7 @@ Full documentation lives in [`docs/`](docs/), organized by topic:
 - [Coding Standards](docs/coding-standards.md)
 - [Contributing](docs/contributing.md)
 - [Security Considerations](docs/security.md)
+- [License](docs/license.md)
 
 If you're working in this repo with an AI coding assistant, start from its entry-point file instead of this README — each one indexes the same `docs/` for AI-assisted sessions, so nothing is documented twice:
 
@@ -209,4 +210,4 @@ All of them are auto-loaded by their respective tool and share the same content:
 
 ## License
 
-Add a license before publishing this repository publicly if you intend to open-source it.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for the full text.
