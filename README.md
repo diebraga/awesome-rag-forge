@@ -1,6 +1,8 @@
 # awesome-rag-forge
 
-![Awesome RAG Forge network diagram](public/images/awesome-rag-forge-network.webp)
+<p align="center">
+  <img src="public/images/awesome-rag-forge-network.webp" alt="Awesome RAG Forge network diagram" width="520">
+</p>
 
 A local-first RAG knowledge-base builder managed through an MCP server, with a read-only testing UI and approval-gated knowledge operations.
 

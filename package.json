@@ -12,7 +12,7 @@
     "generate:openapi": "tsx scripts/generate-openapi.ts",
     "mcp:rag-manager": "tsx mcp/rag-manager/server.ts",
     "mcp:rag-manager:http": "tsx mcp/rag-manager/http.ts",
-    "postinstall": "prisma generate",
+    "postinstall": "node scripts/generate-prisma.mjs",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:local:up": "docker compose up -d postgres",
