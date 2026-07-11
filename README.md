@@ -16,6 +16,18 @@ A local-first RAG knowledge-base builder managed through an MCP server, with a r
 ![Vitest](https://img.shields.io/badge/tests-Vitest-6e9f18)
 ![License](https://img.shields.io/badge/license-not%20set-lightgrey)
 
+## AI Assistant Setup Checklist
+
+If a user drops this repository into an AI coding assistant and asks to set it up, follow this sequence before improvising:
+
+1. Check local prerequisites: `node -v`, `npm -v`, Docker availability if local Postgres may be used, Postgres/`DATABASE_URL`, Ollama, and an MCP-capable client.
+2. If `DATABASE_URL` is missing, ask the user one clear question: paste an existing Postgres URL with `pgvector`, or approve creating the included local Docker Postgres database.
+3. Ask permission before installing or starting system-level dependencies such as Node.js, Docker Desktop, native Postgres, Ollama, or an MCP client. Do not silently install them.
+4. Once the database choice is clear, run the normal setup: `npm install`, copy `.env.example` to `.env`, fill `DATABASE_URL`, `npx prisma generate`, `npx prisma db push`, `npm run db:seed`, then `npm run dev`.
+5. If chat is requested and Ollama is missing, stopped, or missing the configured model, explain the issue and ask permission to install/start/pull as needed. The default model is `qwen2.5:7b-instruct` unless `.env` says otherwise.
+6. Optional bucket credentials are only needed to preserve original uploaded files for later download. If the user does not have them, continue with text/OCR ingestion; do not block setup.
+7. Treat the web app as a read-only testing surface. Knowledge and harness writes happen through the MCP server only, with user approval for write/destructive actions.
+
 ## Overview
 
 awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. A user connects an MCP-capable assistant, asks it to create or improve the knowledge base, reviews the proposed changes, and only approved knowledge becomes visible to the chat/testing surface.
