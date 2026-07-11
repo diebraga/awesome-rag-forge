@@ -42,7 +42,7 @@ Notes that apply to all three:
 
 Most local MCP users should treat the server as a knowledge-base manager, not a code editor. See [Operating Modes](operating-modes.md).
 
-This template sets `DEVELOPER_MODE=true` so developers can intentionally modify the repository after explicit user confirmation. This flag is only about source-code/schema/dependency/project-structure changes. Normal MCP knowledge-base operations, including approval-gated writes and archival actions, remain available either way. Non-technical users who only want MCP knowledge management should set `DEVELOPER_MODE=false` in `.env`.
+`DEVELOPER_MODE` defaults to `false` (Operator Mode). Set `DEVELOPER_MODE=true` in `.env` only when you want the assistant to intentionally modify the repository after explicit user confirmation; anything other than `true` (including unset) stays in Operator Mode. This flag is only about source-code/schema/dependency/project-structure changes — normal MCP knowledge-base operations, including approval-gated writes and archival actions, remain available either way. When it is `true`, the web UI shows a permanent Developer Mode warning banner and the Claude Code statusline shows a `⚠ DEVELOPER MODE` badge (both read `lib/developer-mode.ts` / the project `.env`, not the model's memory). To return to Operator Mode, set it back to `false` and restart the session.
 
 ## First-time local setup
 
