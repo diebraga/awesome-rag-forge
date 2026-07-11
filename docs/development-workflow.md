@@ -54,6 +54,10 @@ ollama pull qwen2.5:7b-instruct
 
 The chat UI will tell you if Ollama is running but the model isn't pulled yet.
 
+## Final setup message
+
+After setup, tell the user what is ready and what each surface can do. Use [Post-Install Handoff](post-install-handoff.md) as the shared wording for the final response.
+
 ## Running the MCP server
 
 ```bash

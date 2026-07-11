@@ -21,6 +21,7 @@ Load only what's relevant to your current task:
 - [Local Postgres Setup](../docs/local-postgres.md) — Docker-first local Postgres + pgvector setup.
 - [RAG Architecture](../docs/rag.md) — chunking, retrieval, review loop, feedback/eval.
 - [Feedback Review Loop](../docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
+- [Post-Install Handoff](../docs/post-install-handoff.md) — final setup message explaining UI vs. MCP capabilities.
 - [MCP Server](../docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
 - [API Routes](../docs/api-routes.md) — `/api/chat`, `/api/rag`.
 - [Testing Surface](../docs/testing-surface.md) — `ENABLE_TESTING_SURFACE` gate for chat, collections, harness, feedback, RAG, and Ollama web routes.
@@ -43,6 +44,7 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 3. **Attempt to fix what's safely automatable yourself**: `npm install` for missing packages, `npm run db:local:up` after the user approves local Docker Postgres, `CREATE EXTENSION IF NOT EXISTS vector;` if an existing database is reachable but the extension isn't enabled, running `ollama pull <model>` if Ollama is installed and running but the model isn't, and — if you are Claude Code and the MCP client is already installed but just not registered for this project — `claude mcp add rag-manager -- npm run mcp:rag-manager` from inside the clone (see [MCP Server](../docs/mcp-server.md#connecting-to-claude-code-claude-desktop-or-codex)). That last one only takes effect for that client's *next* session, not the one you're running in — tell the user that plainly rather than implying it's live immediately. Say what you're about to do before doing it, same as any other command.
 4. **Never install system-level software (Node itself, Docker Desktop, native Postgres, Ollama, an MCP client) without asking first** — offer to, but confirm before running it.
 5. **Ask about optional bucket storage after `DATABASE_URL`: buckets are only needed to preserve original PDFs for download; text/OCR ingest works without them. If the user is intentionally exposing the web testing surface online, ask them to set `APP_API_KEY`; do not ask for an MCP API key for the default local stdio MCP server. Never fabricate, guess, or auto-generate secrets** (`DATABASE_URL`, `STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY`, etc.). These always require the user to obtain them from a real provider and add them to `.env` themselves — point them at [Environment Variables](../docs/environment-variables.md) rather than inventing a placeholder that would fail silently later.
+6. **After setup succeeds, finish with the shared handoff in [Post-Install Handoff](../docs/post-install-handoff.md).** Tell the user what is ready, what the read-only browser UI can do, what MCP can do, and whether a new MCP client session is needed.
 
 ## Non-negotiable rules
 

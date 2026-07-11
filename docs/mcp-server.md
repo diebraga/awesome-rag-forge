@@ -4,6 +4,8 @@ The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base th
 
 Opening the Next.js app in a browser does not connect this MCP server. The browser UI can test approved knowledge, browse approved collections/harness state, submit narrow answer feedback, and use local setup helpers, but it must not be treated as an MCP client. To create or manage RAG/harness data, connect an MCP-capable assistant to this server over stdio from the local clone.
 
+After setup or registration, explain this boundary to the user with [Post-Install Handoff](post-install-handoff.md).
+
 ## Running it locally
 
 ```bash
