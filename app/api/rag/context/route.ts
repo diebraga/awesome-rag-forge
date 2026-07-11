@@ -23,6 +23,12 @@ import { buildAssistantContext } from "@/lib/rag/chat-context";
  *     description: Advanced read-only integration endpoint. Returns the same end-user-facing system prompt, approved harness rules, knowledge-base scope, citations, and retrieved RAG context used by /api/chat. This is not a creator/admin endpoint and never exposes drafts, rejected knowledge, feedback review queues, or MCP-only workflow state.
  *     tags: [Chat]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional user question used to rank retrieved RAG context.
  *     responses:
  *       200:
  *         description: Context bundle retrieved
@@ -41,7 +47,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const context = await buildAssistantContext();
+    const { searchParams } = new URL(request.url);
+    const context = await buildAssistantContext(searchParams.get("q") ?? undefined);
     return NextResponse.json({ ok: true, ...context });
   } catch (error) {
     return routeErrorResponse("GET /api/rag/context", error, "Unable to build assistant context.");

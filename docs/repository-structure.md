@@ -24,7 +24,7 @@ components.json           shadcn configuration
 
 lib/
   rag/                    Centralized RAG + harness domain logic (separate from generic infra below)
-    retrieval.ts           getRagContext() — approved-chunk text search, read-only
+    retrieval.ts           getRagContext() — approved hybrid semantic/lexical retrieval, read-only
     chat-context.ts          buildAssistantContext() — sole definition of how the
                               end-user-facing chat behaves: identity, read-only
                               rules, harness rendering, anti-injection guard

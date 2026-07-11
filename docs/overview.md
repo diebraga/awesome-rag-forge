@@ -32,7 +32,7 @@ If you ever find yourself wiring a write operation into `app/`, that's a sign it
 ## What's not included (yet)
 
 - Authentication, billing, or multi-tenant access control.
-- Real embeddings/vector search (the schema has an `embedding` column reserved for this; MVP retrieval is text search).
+- External embedding providers or hosted vector databases; local semantic retrieval uses Ollama + pgvector.
 - File parsing (PDF/DOCX extraction) — pass already-extracted text into the MCP tools.
 - Automatic deployment of the MCP server (see [Deployment](deployment.md)).
 

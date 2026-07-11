@@ -34,7 +34,7 @@ Request body:
 
 Behavior:
 
-1. Calls `buildAssistantContext()` from [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) to get the assistant's identity/read-only/harness system prompt, knowledge-base scope stats, retrieved RAG context, and structured citations.
+1. Extracts the latest non-empty user message and passes it to `buildAssistantContext()` from [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts), so retrieval is ranked for the actual question instead of simply returning the latest chunks.
 2. Calls `getChatProvider(provider).chat(...)` (`lib/chat-providers/index.ts`) with that system prompt and the requested (or default) model. The route itself is provider-agnostic — it does not know or care whether the reply came from Ollama, Claude, Codex/OpenAI, or Gemini; see [System Architecture](architecture.md) and the README's "LLM provider" section for the abstraction.
 3. Returns `{ reply, model, sources }` — `model` here is the assistant's configured **name** (e.g. `"Archivist"`), never the underlying model/provider string, so the real backend is not leaked through the API response either. `sources` is the deduped list of `APPROVED` documents whose chunks were retrieved for this request: `[{ documentId, title, downloadable }]`. `downloadable` is `true` only when the document has a stored original file — the UI uses it to decide whether to render a download link, and it's the only place a `storageKey` value's *existence* is exposed (the key itself never is). See `GET /api/rag/documents/[id]/download` below.
 
@@ -46,13 +46,13 @@ Read-only setup helpers for the testing UI provider chooser. `GET` returns the p
 
 ## `GET /api/rag`
 
-Lightweight debug/inspection endpoint. Returns the same RAG context array and citations the chat route would use:
+Lightweight debug/inspection endpoint. Returns the same RAG context array and citations the chat route would use. Pass `?q=What%20is%20COEse` to inspect query-aware retrieval for a specific question:
 
 ```json
 { "ok": true, "count": 2, "context": ["Source 1: ...", "Source 2: ..."], "citations": [{ "documentId": "...", "title": "...", "downloadable": true }] }
 ```
 
-Useful for verifying that seeded or newly approved chunks are actually retrievable without going through the full chat flow.
+Useful for verifying that seeded or newly approved chunks are actually retrievable without going through the full chat flow. If a user reports that only exact wording works, check this endpoint with their natural question before blaming the model.
 
 See `app/api/rag/route.ts`.
 

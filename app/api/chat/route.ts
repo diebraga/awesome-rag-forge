@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
 import { routeErrorResponse } from "@/lib/api-errors";
 import { buildAssistantContext } from "@/lib/rag/chat-context";
+import { getLatestUserQuestion } from "@/lib/rag/chat-query";
 import { getChatProvider, type ProviderChatMessage } from "@/lib/chat-providers";
 
 type ChatRequest = {
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
     // Never trust a client-supplied model name directly — only ever use one
     // from the active provider's own allowlist (see lib/chat-providers).
     const model = body.model && provider.isKnownModel(body.model) ? body.model : provider.defaultModel;
-    const { name, systemPrompt, citations } = await buildAssistantContext();
+    const { name, systemPrompt, citations } = await buildAssistantContext(getLatestUserQuestion(messages));
 
     const providerMessages: ProviderChatMessage[] = [
       { role: "system", content: systemPrompt },

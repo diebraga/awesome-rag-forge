@@ -38,7 +38,7 @@ The MCP server is allowed to create and manage the RAG knowledge base and harnes
 | `list_collections` | No | List existing collections. |
 | `create_collection` | Yes (if approved) | Create a new collection, but only when `userApproval: true`. |
 | `list_documents` | No | List documents, optionally filtered. |
-| `search_knowledge_base` | No | Text search over chunks. |
+| `search_knowledge_base` | No | Direct MCP text search over chunks. Chat uses the separate read-only hybrid semantic/lexical retriever. |
 | `propose_source_insert` | **No** | Analyze source text and propose collection/document/chunk plan. |
 | `approve_source_insert` | Yes (if approved) | Persist a proposal, but only when `userApproval: true`. |
 | `attach_document_file` | Yes (if storage configured and approved) | Record a `storageKey` for an original file; refuses if storage env vars are missing or `userApproval` isn't `true`. |

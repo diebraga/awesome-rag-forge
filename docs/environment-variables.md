@@ -8,6 +8,7 @@ See `.env.example` for the canonical, always-up-to-date list. Summary:
 | `CHAT_PROVIDER` | No (defaults to `ollama`) | Chat API route | Server-side fallback provider. The testing UI can also pass a chosen provider per request and caches that browser choice locally. |
 | `OLLAMA_URL` | No (defaults to `http://127.0.0.1:11434`) | Chat API route | Base URL of the Ollama server. Only read by the `ollama` provider. |
 | `OLLAMA_MODEL` | No (defaults to `qwen2.5:7b-instruct`) | Chat API route | Default model name to request from Ollama. Only read by the `ollama` provider. |
+| `OLLAMA_EMBED_MODEL` | No (defaults to `nomic-embed-text`) | MCP approval/backfill, chat retrieval | Local embedding model used to write approved chunk embeddings and embed read-only user queries for semantic search. Pull it with `ollama pull nomic-embed-text`. |
 | `OPENAI_API_KEY` | Only for Codex/OpenAI testing | Chat provider | Hosted OpenAI/Codex API key. Add to `.env`, restart the app, then reload the testing UI. Never enter it into the browser UI or commit it. |
 | `OPENAI_MODEL` | No | Chat provider | Optional default OpenAI/Codex test model. |
 | `ANTHROPIC_API_KEY` | Only for Claude testing | Chat provider | Hosted Anthropic API key. Add to `.env`, restart the app, then reload the testing UI. Never enter it into the browser UI or commit it. |

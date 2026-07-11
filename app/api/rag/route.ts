@@ -11,6 +11,12 @@ import { getRagContext } from "@/lib/rag/retrieval";
  *     description: Returns the same prompt blocks and citations the chat route retrieves, without generating a reply — useful for verifying retrieval independent of the LLM.
  *     tags: [Chat]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional user question used to rank retrieved RAG context.
  *     responses:
  *       200:
  *         description: Retrieved context returned
@@ -29,7 +35,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { promptBlocks, citations } = await getRagContext();
+    const { searchParams } = new URL(request.url);
+    const { promptBlocks, citations } = await getRagContext(searchParams.get("q") ?? undefined);
     return NextResponse.json({
       ok: true,
       count: promptBlocks.length,

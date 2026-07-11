@@ -27,7 +27,7 @@ RAG-domain logic is centralized under `lib/rag/`, separate from generic infrastr
 
 ```text
 lib/rag/
-  retrieval.ts     getRagContext() — approved-chunk text search, read-only
+  retrieval.ts     getRagContext() — approved hybrid semantic/lexical retrieval, read-only
   chat-context.ts   buildAssistantContext() — the ONLY definition of how the
                       test chat talks: identity, read-only rules, harness
                       rendering, anti-injection guard, and the rule that it
@@ -72,7 +72,7 @@ Ollama local model server
 Response rendered in the chat UI
 ```
 
-The chat route calls `buildAssistantContext()` to get a single assembled system prompt (identity + read-only rules + harness capabilities/restrictions + knowledge-base scope) plus the retrieved chunks, then calls Ollama's `/api/chat`. Only chunks, documents, and harness rules with `status: APPROVED` are ever read here, and nothing in this path issues a write query. See [API Routes](api-routes.md) for the full route contract.
+The chat route calls `buildAssistantContext()` with the latest user question to get a single assembled system prompt (identity + read-only rules + harness capabilities/restrictions + knowledge-base scope) plus query-ranked retrieved chunks, then calls the selected chat provider. Only chunks, documents, and harness rules with `status: APPROVED` are ever read here, and nothing in this path issues a write query. See [API Routes](api-routes.md) for the full route contract.
 
 ### Any agent, not just this chat
 

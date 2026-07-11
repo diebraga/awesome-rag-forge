@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RagSourceType } from "../../generated/prisma/enums";
 import { chunkSourceText, chunkPdfPages, type ExtractedPageInput } from "./chunking";
+import { buildRetrievalAliases } from "./retrieval-enrichment";
 import { prisma } from "./prisma";
 
 export const sourceTypeSchema = z.enum([
@@ -56,6 +57,7 @@ export const proposalSchema = z.object({
       sectionTitle: z.string().optional(),
       tokenCount: z.number().int().positive(),
       pageNumber: z.number().int().positive().optional(),
+      retrievalAliases: z.array(z.string()).default([]),
     }),
   ),
   sourcePlan: z.object({
@@ -103,14 +105,14 @@ export async function buildSourceProposal(input: {
     : null;
 
   const title = input.title?.trim() || titleFromSource(input.sourceText);
-  const chunks = chunkSourceText(input.sourceText);
+  const rawChunks = chunkSourceText(input.sourceText);
   const warnings: string[] = [];
 
   if (!input.category && !input.domain) {
     warnings.push("No category or domain was provided. Consider asking the user how this source should be classified.");
   }
 
-  if (chunks.length === 1 && input.sourceText.length > 1800) {
+  if (rawChunks.length === 1 && input.sourceText.length > 1800) {
     warnings.push("The source did not split cleanly into paragraphs. Review chunk quality before approval.");
   }
 
@@ -130,6 +132,18 @@ export async function buildSourceProposal(input: {
         domain: input.domain,
         tags: input.tags ?? [],
       };
+
+  const chunks = rawChunks.map((chunk) => ({
+    ...chunk,
+    retrievalAliases: buildRetrievalAliases({
+      title,
+      chunkText: chunk.chunkText,
+      sectionTitle: chunk.sectionTitle,
+      category: input.category,
+      domain: input.domain,
+      tags: input.tags,
+    }),
+  }));
 
   return {
     proposedCollection,
@@ -174,13 +188,13 @@ export async function buildFileProposal(input: {
     : null;
 
   const title = input.title?.trim() || input.fileName.replace(/\.pdf$/i, "").trim() || "Untitled document";
-  const chunks = chunkPdfPages(input.pages);
+  const rawChunks = chunkPdfPages(input.pages);
   const warnings: string[] = [];
 
   if (!input.category && !input.domain) {
     warnings.push("No category or domain was provided. Consider asking the user how this source should be classified.");
   }
-  if (chunks.length === 0) {
+  if (rawChunks.length === 0) {
     warnings.push("No extractable text was found in this PDF, even after OCR. The file will be stored, but nothing will be added to the knowledge base.");
   }
   if (input.ocrPageCount > 0) {
@@ -205,6 +219,18 @@ export async function buildFileProposal(input: {
         domain: input.domain,
         tags: input.tags ?? [],
       };
+
+  const chunks = rawChunks.map((chunk) => ({
+    ...chunk,
+    retrievalAliases: buildRetrievalAliases({
+      title,
+      chunkText: chunk.chunkText,
+      sectionTitle: chunk.sectionTitle,
+      category: input.category,
+      domain: input.domain,
+      tags: input.tags,
+    }),
+  }));
 
   return {
     proposedCollection,

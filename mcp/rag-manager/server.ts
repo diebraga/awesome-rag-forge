@@ -24,6 +24,8 @@ import {
   deleteFileFromStorage,
 } from "../../lib/storage";
 import { buildHarnessProposal } from "../../lib/rag/harness";
+import { withRetrievalAliases } from "./retrieval-enrichment";
+import { embedChunkForApproval, storeChunkEmbedding } from "./chunk-embeddings";
 
 // Whole-file base64 round-trips through the calling model's context twice
 // (propose then approve), so cap it well below typical MCP message limits.
@@ -185,9 +187,7 @@ async function persistFileUpload(input: {
           tokenCount: chunk.tokenCount,
           pageNumber: chunk.pageNumber,
           status: "PENDING_REVIEW",
-          metadata: {
-            insertedBy: "rag-manager-mcp",
-          },
+          metadata: withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases),
         },
       });
 
@@ -465,7 +465,7 @@ server.registerTool(
   "search_knowledge_base",
   {
     title: "Search RAG knowledge",
-    description: "Search approved or filtered chunks using simple text search. This is pre-vector-search MVP retrieval.",
+    description: "Search approved or filtered chunks with direct MCP text search. Chat retrieval uses the separate read-only hybrid retriever.",
     inputSchema: {
       query: z.string().min(1),
       collectionId: z.string().optional(),
@@ -597,9 +597,7 @@ server.registerTool(
             tokenCount: chunk.tokenCount,
             pageNumber: chunk.pageNumber,
             status: "PENDING_REVIEW",
-            metadata: {
-              insertedBy: "rag-manager-mcp",
-            },
+            metadata: withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases),
           },
         });
 
@@ -1082,11 +1080,18 @@ server.registerTool(
     },
   },
   async ({ chunkId, reviewer, notes }) => {
+    const pendingChunk = await prisma.ragChunk.findUniqueOrThrow({
+      where: { id: chunkId },
+      select: { chunkText: true, metadata: true },
+    });
+    const embedding = await embedChunkForApproval(pendingChunk);
+
     const result = await prisma.$transaction(async (tx) => {
       const chunk = await tx.ragChunk.update({
         where: { id: chunkId },
         data: { status: "APPROVED" },
       });
+      await storeChunkEmbedding(tx, chunk.id, embedding);
       // A document becomes visible to retrieval (lib/rag/retrieval.ts) only
       // once it has status: APPROVED too — flip it here so approving a
       // chunk actually has the documented effect instead of leaving the

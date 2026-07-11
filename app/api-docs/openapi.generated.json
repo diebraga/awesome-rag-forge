@@ -33,6 +33,17 @@
             "bearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional user question used to rank retrieved RAG context."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Retrieved context returned"
@@ -139,6 +150,17 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional user question used to rank retrieved RAG context."
           }
         ],
         "responses": {
