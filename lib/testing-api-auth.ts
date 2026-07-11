@@ -16,7 +16,11 @@ export function isTestingApiKeyConfigured() {
 }
 
 export function isPublicDeploymentRuntime() {
-  return process.env.VERCEL === "1";
+  // Any production build counts as deployed, not just Vercel — a Docker/VPS
+  // deployment with ENABLE_TESTING_SURFACE=true must fail closed the same
+  // way. A local `next build && next start` smoke test also lands here;
+  // set APP_API_KEY for it rather than widening this check.
+  return process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
 }
 
 function readBearerToken(request: Request) {

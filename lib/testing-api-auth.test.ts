@@ -65,6 +65,19 @@ describe("testing API authentication", () => {
     });
   });
 
+  test("requires setup on any production runtime without an API key, not just Vercel", async () => {
+    withEnv({ APP_API_KEY: undefined, NODE_ENV: "production", VERCEL: undefined }, async () => {
+      const response = getTestingApiAuthFailure(requestWithAuthorization());
+
+      expect(response?.status).toBe(503);
+      await expect(response?.json()).resolves.toEqual({
+        ok: false,
+        error: AUTH_SETUP_REQUIRED_ERROR,
+        reason: "missing-api-key",
+      });
+    });
+  });
+
   test("rejects requests without a bearer token when APP_API_KEY is configured", async () => {
     withEnv({ APP_API_KEY: "local-secret", NODE_ENV: "development", VERCEL: undefined }, async () => {
       const response = getTestingApiAuthFailure(requestWithAuthorization());
