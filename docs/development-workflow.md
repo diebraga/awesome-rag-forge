@@ -20,6 +20,24 @@ Optional, only if you want uploaded files stored and downloadable (not required 
 
 If any required piece is missing, `npm run dev`/`npm run build`/`npx prisma db push` will fail with an error pointing at what's wrong — none of it fails silently.
 
+### Installing missing prerequisites (with permission)
+
+An AI assistant setting this project up must ask permission before installing any system-level dependency (see the root `CLAUDE.md` non-negotiable rules). To keep that from turning into a stop-and-ask loop: check everything first, ask permission for all missing pieces **in one message**, then run the vetted command below for each item the user approved, skipping — with a one-line note, not a pause — anything they didn't approve. Don't re-ask about an item already declined in this setup pass.
+
+These are the vetted commands. Prefer them over improvising an install command, so behavior is consistent across machines and across the different AI assistants this repo supports:
+
+| Tool | macOS | Linux | Windows |
+| --- | --- | --- | --- |
+| **Node.js** (≥ 20.9) | `brew install node` | `curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh \| bash` then open a new shell and run `nvm install --lts` | `winget install OpenJS.NodeJS.LTS` |
+| **Docker** (for local Postgres) | `brew install --cask docker` — then launch Docker Desktop once manually; it must be running before `npm run db:local:up` | `curl -fsSL https://get.docker.com \| sh` then `sudo usermod -aG docker $USER` (log out/in once for the group change to apply) | `winget install Docker.DockerDesktop` — then launch Docker Desktop once manually (requires WSL2, which the installer prompts for) |
+| **Ollama** | `brew install ollama` | `curl -fsSL https://ollama.com/install.sh \| sh` | `winget install Ollama.Ollama` |
+
+Notes that apply to all three:
+
+- Docker Desktop and Ollama's background service both need to actually be *running*, not just installed — after install, verify with `docker info` / `curl http://localhost:11434` before assuming the step succeeded, and start the app/service if it isn't up yet.
+- Native PostgreSQL install commands are intentionally not listed here: this project's default local path is `npm run db:local:up` (Docker Postgres + `pgvector` prebuilt), so installing Docker covers the database prerequisite without a separate native Postgres/pgvector install per OS. Only fall back to native Postgres if the user explicitly prefers it over Docker.
+- After installing Node or Docker, a fresh shell/terminal (or a `source` of the shell profile) may be required before the new binary is on `PATH` — check with `node -v` / `docker -v` again rather than assuming the install alone was sufficient.
+
 ## Operator vs. Developer Mode
 
 Most local MCP users should treat the server as a knowledge-base manager, not a code editor. See [Operating Modes](operating-modes.md).
