@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
 import { logRouteError } from "@/lib/api-errors";
+import { getLocalRequestFailure } from "@/lib/local-request-guard";
 import { canAutoStartOllama, startOllamaLocally } from "@/lib/ollama";
 
 /**
@@ -28,6 +29,8 @@ import { canAutoStartOllama, startOllamaLocally } from "@/lib/ollama";
  *         description: Auto-start not available in this environment
  *       401:
  *         description: Missing/invalid API key (only when APP_API_KEY is configured)
+ *       403:
+ *         description: Request did not originate from this machine's own browser (localhost-only guard)
  *       404:
  *         description: Testing surface disabled
  *       500:
@@ -36,6 +39,9 @@ import { canAutoStartOllama, startOllamaLocally } from "@/lib/ollama";
  *         description: Database unreachable
  */
 export async function POST(request: Request) {
+  const localFailure = getLocalRequestFailure(request);
+  if (localFailure) return localFailure;
+
   const readinessFailure = await getTestingApiReadinessFailure(request);
 
   if (readinessFailure) {

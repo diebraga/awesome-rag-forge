@@ -350,6 +350,9 @@
           "401": {
             "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
           },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
+          },
           "404": {
             "description": "Testing surface disabled"
           },
@@ -405,6 +408,9 @@
           "401": {
             "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
           },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
+          },
           "404": {
             "description": "Testing surface disabled"
           },
@@ -450,6 +456,9 @@
           },
           "401": {
             "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
           },
           "404": {
             "description": "Testing surface disabled"
