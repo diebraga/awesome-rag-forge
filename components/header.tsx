@@ -16,7 +16,7 @@ export function Header({ testingSurfaceEnabled }: { testingSurfaceEnabled: boole
   const links = testingSurfaceEnabled ? NAV_LINKS : [];
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-black/10 px-4">
+    <header className="relative z-20 flex h-14 shrink-0 items-center justify-between border-b border-black/10 bg-white px-4">
       <span className="text-sm font-semibold tracking-tight text-black">{PROJECT_NAME}</span>
       <nav className="flex items-center gap-5">
         {links.map((link) => {

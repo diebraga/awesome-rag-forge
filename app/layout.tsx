@@ -27,7 +27,7 @@ export default function RootLayout({
       <body className="flex h-dvh flex-col overflow-hidden bg-white">
         <Header testingSurfaceEnabled={testingSurfaceEnabled} />
         {testingSurfaceEnabled && <TestingApiAuthPrompt />}
-        <div className="min-h-0 flex-1">{children}</div>
+        <div className="relative z-0 min-h-0 flex-1">{children}</div>
       </body>
     </html>
   );

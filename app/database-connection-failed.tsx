@@ -1,7 +1,7 @@
 export function DatabaseConnectionFailed() {
   return (
-    <main className="flex h-full min-h-0 items-center justify-center bg-white px-6">
-      <section className="w-full max-w-2xl space-y-6">
+    <main className="h-full overflow-y-auto bg-white px-6 py-10 text-black">
+      <section className="mx-auto w-full max-w-2xl space-y-6 pb-10">
         <div className="space-y-3">
           <p className="text-sm font-medium uppercase tracking-wide text-black/50">
             Database connection failed

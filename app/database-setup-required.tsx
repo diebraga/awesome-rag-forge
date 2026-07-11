@@ -1,7 +1,15 @@
+function EnvVar({ children }: { children: React.ReactNode }) {
+  return (
+    <code className="rounded bg-black/5 px-1.5 py-0.5 text-[0.95em] text-black">
+      {children}
+    </code>
+  );
+}
+
 export function DatabaseSetupRequired() {
   return (
-    <main className="flex h-full min-h-0 items-center justify-center bg-white px-6">
-      <section className="w-full max-w-2xl space-y-6">
+    <main className="h-full overflow-y-auto bg-white px-6 py-10 text-black">
+      <section className="mx-auto w-full max-w-2xl space-y-6 pb-10">
         <div className="space-y-3">
           <p className="text-sm font-medium uppercase tracking-wide text-black/50">
             Database required
@@ -10,9 +18,9 @@ export function DatabaseSetupRequired() {
             Add a database connection before using this project.
           </h1>
           <p className="text-base leading-7 text-black/70">
-            <code>DATABASE_URL</code> is the minimum required configuration. The
+            <EnvVar>DATABASE_URL</EnvVar> is the minimum required configuration. The
             app, MCP server, seed script, and Prisma schema all require the same
-            Postgres database with <code>pgvector</code>. Configure it first,
+            Postgres database with <EnvVar>pgvector</EnvVar>. Configure it first,
             then restart the server.
           </p>
         </div>
@@ -23,9 +31,9 @@ export function DatabaseSetupRequired() {
             <code>{'DATABASE_URL="postgresql://user:password@host:5432/database?schema=public"'}</code>
           </pre>
           <p className="text-sm leading-6 text-black/60">
-            Use a Postgres-compatible provider with the <code>pgvector</code>
-            extension enabled, then run <code>npx prisma db push</code> and
-            <code> npm run db:seed</code>.
+            Use a Postgres-compatible provider with the <EnvVar>pgvector</EnvVar>
+            extension enabled, then run <EnvVar>npx prisma db push</EnvVar> and
+            <EnvVar>npm run db:seed</EnvVar>.
           </p>
         </div>
 
@@ -37,8 +45,8 @@ export function DatabaseSetupRequired() {
             and cleaned text is saved into the RAG database.
           </p>
           <p className="text-sm leading-6 text-black/70">
-            Add <code>STORAGE_BUCKET</code>, <code>STORAGE_ACCESS_KEY_ID</code>,
-            and <code>STORAGE_SECRET_ACCESS_KEY</code> only if you also want to
+            Add <EnvVar>STORAGE_BUCKET</EnvVar>, <EnvVar>STORAGE_ACCESS_KEY_ID</EnvVar>,
+            and <EnvVar>STORAGE_SECRET_ACCESS_KEY</EnvVar> only if you also want to
             keep original PDFs for later download. S3-compatible providers such
             as Cloudflare R2, AWS S3, and MinIO are supported.
           </p>
@@ -48,7 +56,7 @@ export function DatabaseSetupRequired() {
           <p>
             Supported today: Prisma Postgres, Supabase, Neon, RDS/Postgres, local
             Postgres, or another Postgres-compatible database that supports
-            <code> pgvector</code>.
+            <EnvVar>pgvector</EnvVar>.
           </p>
           <p>
             Not supported today: MongoDB, SQLite, MySQL, or document databases
