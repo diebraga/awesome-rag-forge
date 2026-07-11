@@ -1,8 +1,22 @@
 # API Routes
 
-Every route below is part of the web testing surface and is hidden unless `ENABLE_TESTING_SURFACE=true`. When the flag is missing or false, the pages return 404 and these API routes return `404` JSON before doing any work. See [Testing Surface](testing-surface.md).
+Every route below is part of the web testing surface and is enabled only when `ENABLE_TESTING_SURFACE=true`. When the flag is missing or false, the pages show a disabled-mode message and these API routes return `404` JSON before doing any work. See [Testing Surface](testing-surface.md).
 
 Every route below is **read-only** except `POST /api/feedback`, which is a single, deliberately narrow exception — it can create a `RagFeedback` row and nothing else. See [System Architecture](architecture.md) for the enforced read/write boundary and why that one route exists.
+
+## Shared readiness and authentication
+
+All testing API routes check the same shared gate before route-specific work runs: database configured/connected, `ENABLE_TESTING_SURFACE=true`, then `APP_API_KEY` if required. Local clones can leave `APP_API_KEY` blank. If it is set, callers must send `Authorization: Bearer <key>`. If Vercel has `ENABLE_TESTING_SURFACE=true` but no `APP_API_KEY`, the routes return `503` with `reason: "missing-api-key"`. If a configured key is missing or wrong, routes return `401` with `reason: "invalid-api-key"`. The default local stdio MCP server does not use this web API key.
+
+## API docs and OpenAPI spec: `/api-docs`, `/api-docs/openapi.json`
+
+Every route on this page is described in a generated OpenAPI 3.0 spec, viewable as interactive Swagger UI at `/api-docs` and downloadable directly at `/api-docs/openapi.json` once the testing surface is enabled and the database is connected. The point is external, framework-agnostic integration: feed the downloaded spec into [openapi-generator](https://openapi-generator.tech) to get a working client in any language, without depending on this project's own stack.
+
+**Generated, not hand-maintained.** `scripts/generate-openapi.ts` scans every `app/api/**/route.ts` file for a `@swagger` JSDoc comment and assembles the spec at build time (`npm run generate:openapi`, wired into `prebuild` so it runs automatically before every `npm run build`). Adding a new endpoint means adding its own `@swagger` block to its route file — see any existing route for the pattern — then rebuilding (or running the script directly for a quick check). There is no separate spec file to keep in sync by hand.
+
+**Generated at build time on purpose, not per-request:** an API route that scanned source files for `@swagger` comments on every request would be fragile on serverless platforms like Vercel, whose file tracing only bundles files actually imported at runtime, not arbitrary source read via `fs`/glob. Writing `app/api-docs/openapi.generated.json` at build time sidesteps that; the gated `/api-docs/openapi.json` route imports the generated artifact instead of scanning source at runtime.
+
+**`/api-docs` is part of the testing surface.** It renders only when `DATABASE_URL` is configured and reachable and `ENABLE_TESTING_SURFACE=true`; otherwise it shows the same setup/disabled instructions as the rest of the testing UI. The spec contains schema only, never live data.
 
 ## `POST /api/chat`
 
@@ -38,7 +52,7 @@ See `app/api/rag/route.ts`.
 
 ## `GET /api/rag/documents/[id]/download`
 
-Read-only. Redirects (`307`) to a short-lived (5 minute) presigned URL for a document's original stored file. Requires the document to be `status: APPROVED` **and** have a non-null `storageKey` — anything else (not found, still `PENDING_REVIEW`, or no file was ever attached) returns `404`:
+Read-only. Redirects (`307`) to a short-lived (5 minute) presigned URL for a document's original stored file. If called with `?format=json`, returns `{ "ok": true, "url": "..." }` instead so the browser UI can attach its API key to this route and then open the presigned URL normally. Requires the document to be `status: APPROVED` **and** have a non-null `storageKey` — anything else (not found, still `PENDING_REVIEW`, or no file was ever attached) returns `404`:
 
 ```json
 { "ok": false, "error": "No downloadable file found for this document." }
@@ -48,7 +62,7 @@ Bytes are never proxied through the Node process — the redirect target is the 
 
 ## `GET /api/rag/context`
 
-The full "RAG awareness" bundle — the same thing `/api/chat` uses internally — exposed for **any external agent** you want to connect later (a different LLM provider, a different app, a bot):
+Advanced integration endpoint. It returns the end-user-facing context bundle that `/api/chat` uses internally, for a trusted external chat client that needs to reproduce the same behavior without importing this project's code:
 
 ```json
 {
@@ -77,11 +91,11 @@ The full "RAG awareness" bundle — the same thing `/api/chat` uses internally �
 }
 ```
 
-`capabilities`/`restrictions` are only ever `APPROVED` `HarnessRule` rows — see [RAG Architecture](rag.md#the-harness-capabilities-and-restrictions). An external agent can fetch this endpoint, use `systemPrompt` (or assemble its own from `name`/`stats`/`capabilities`/`restrictions`/`ragContext`) as its own system prompt, and it will inherit the same identity, harness rules, and read-only posture as the local chat — without ever touching Prisma or the database directly.
+`capabilities`/`restrictions` are only ever `APPROVED` `HarnessRule` rows — see [RAG Architecture](rag.md#the-harness-capabilities-and-restrictions). An external chat client can fetch this endpoint, use `systemPrompt` (or assemble its own from `name`/`stats`/`capabilities`/`restrictions`/`ragContext`) as its own system prompt, and inherit the same identity, approved harness rules, and read-only posture as the local chat without importing Prisma or this codebase. It is not a creator/admin endpoint: drafts, rejected records, feedback queues, eval creation, and all review workflows remain MCP-only.
 
 **This is the chat's context, not the knowledge base creator's.** `stats` (counts/categories/domains/tags) exists for the model's own internal calibration only — `systemPrompt` explicitly instructs it never to recite these figures or describe its own structure to the end user. If you're building the knowledge base and need to see actual collection/document names, connect an MCP client to `mcp/rag-manager` instead (see [MCP Server](mcp-server.md)) — that's the creator-facing surface, with full structural visibility on purpose.
 
-**No authentication is applied yet.** This is intentional for local/MVP use (see [Security Considerations](security.md)); add an API key or similar before exposing this beyond your own machine.
+This endpoint uses the same shared testing API gate as the rest of the web surface: local clones can leave `APP_API_KEY` blank, but if a key is configured the caller must send `Authorization: Bearer <key>`.
 
 See `app/api/rag/context/route.ts`.
 
@@ -139,7 +153,7 @@ There is intentionally no graph/visualization layer here — an earlier version 
 
 ## `GET /api/rag/harness`
 
-Read-only: the chat's identity and its `APPROVED` capabilities/restrictions, without the retrieval call `GET /api/rag/context` also makes — backs the [Harness page](#the-harness-page).
+Read-only testing endpoint: the chat's identity and its `APPROVED` capabilities/restrictions, without the retrieval call `GET /api/rag/context` also makes — backs the [Harness page](#the-harness-page). This is display-only; harness proposal, approval, rejection, and review stay MCP-only.
 
 ```json
 {
@@ -206,7 +220,7 @@ If Ollama isn't installed, the underlying `ollama` binary lookup fails and this 
 
 ## `POST /api/feedback`
 
-Records a thumbs up/down reaction to a chat answer. The **only** database write anywhere in `app/` — see [Security Considerations](security.md#post-apifeedback--the-one-narrow-write-path-in-the-chat-app-scoped-on-purpose) for why it's safe to be an exception and what stops it from becoming a bigger one.
+Records a thumbs up/down reaction to a chat answer. The **only** database write anywhere in `app/` — see [Security Considerations](security.md#post-apifeedback--the-one-narrow-write-path-in-the-chat-app-scoped-on-purpose) for why it's safe to be an exception and what stops it from becoming a bigger one. Feedback review, feedback resolution, eval creation, and any follow-up knowledge/harness changes stay MCP-only.
 
 Request body:
 

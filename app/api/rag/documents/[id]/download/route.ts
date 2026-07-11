@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
+import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
+import { routeErrorResponse } from "@/lib/api-errors";
 import { prisma } from "@/lib/prisma";
 import { getDownloadUrl } from "@/lib/storage";
 
@@ -9,15 +10,43 @@ import { getDownloadUrl } from "@/lib/storage";
  * this route never reads DRAFT/PENDING_REVIEW/REJECTED documents' files,
  * matching every other route's APPROVED-only visibility rule.
  */
+/**
+ * @swagger
+ * /api/rag/documents/{id}/download:
+ *   get:
+ *     summary: Download an approved document's stored original file
+ *     description: Requires the document to be status APPROVED with a non-null storageKey. Redirects to a short-lived presigned URL by default, or returns it as JSON with ?format=json.
+ *     tags: [Documents]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: format
+ *         in: query
+ *         schema: { type: string, enum: [json] }
+ *         description: Pass "json" to receive { ok, url } instead of a 307 redirect.
+ *     responses:
+ *       200:
+ *         description: "Presigned URL returned as JSON (only with ?format=json)"
+ *       307:
+ *         description: Redirect to a short-lived presigned download URL
+ *       401:
+ *         description: Missing/invalid API key (only when APP_API_KEY is configured)
+ *       404:
+ *         description: Testing surface disabled, or no downloadable file for this document
+ *       503:
+ *         description: Database unreachable
+ */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isTestingSurfaceEnabled()) {
-    return NextResponse.json(
-      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
-      { status: 404 },
-    );
+  const readinessFailure = await getTestingApiReadinessFailure(request);
+
+  if (readinessFailure) {
+    return readinessFailure;
   }
 
   try {
@@ -35,14 +64,16 @@ export async function GET(
     }
 
     const url = await getDownloadUrl(document.storageKey);
+    const format = new URL(request.url).searchParams.get("format");
+
+    if (format === "json") {
+      return NextResponse.json({ ok: true, url });
+    }
+
     return NextResponse.redirect(url, { status: 307 });
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : "Unable to generate a download link.",
-      },
-      { status: 500 },
-    );
+    // A raw S3/storage error here could include bucket/endpoint details —
+    // never echo it directly, unlike the "not found" case above.
+    return routeErrorResponse("GET /api/rag/documents/[id]/download", error, "Unable to generate a download link.");
   }
 }

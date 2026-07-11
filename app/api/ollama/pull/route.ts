@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
+import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
+import { logRouteError } from "@/lib/api-errors";
 import { canAutoStartOllama, isKnownModel, OLLAMA_URL } from "@/lib/ollama";
 
 /**
@@ -12,13 +13,44 @@ import { canAutoStartOllama, isKnownModel, OLLAMA_URL } from "@/lib/ollama";
  * deployed instance must never let a visitor's browser request trigger.
  * The requested model must also be one of the fixed AVAILABLE_MODELS —
  * never pass an arbitrary client-supplied model name to Ollama.
+ *
+ * @swagger
+ * /api/ollama/pull:
+ *   post:
+ *     summary: Stream a model download's progress from Ollama
+ *     description: Local-only, non-production. The requested model must be one of the fixed AVAILABLE_MODELS.
+ *     tags: [Ollama]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [model]
+ *             properties:
+ *               model: { type: string }
+ *     responses:
+ *       200:
+ *         description: Newline-delimited JSON progress stream, passed through from Ollama unmodified
+ *         content:
+ *           application/x-ndjson: {}
+ *       400:
+ *         description: Invalid body, unknown model, or auto-start not available in this environment
+ *       401:
+ *         description: Missing/invalid API key (only when APP_API_KEY is configured)
+ *       404:
+ *         description: Testing surface disabled
+ *       502:
+ *         description: Ollama returned an error starting the download
+ *       503:
+ *         description: Database unreachable, or cannot reach Ollama
  */
 export async function POST(request: Request) {
-  if (!isTestingSurfaceEnabled()) {
-    return NextResponse.json(
-      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
-      { status: 404 },
-    );
+  const readinessFailure = await getTestingApiReadinessFailure(request);
+
+  if (readinessFailure) {
+    return readinessFailure;
   }
 
   if (!canAutoStartOllama()) {
@@ -35,7 +67,7 @@ export async function POST(request: Request) {
   try {
     ({ model } = (await request.json()) as { model?: string });
   } catch {
-    return NextResponse.json({ ok: false, error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid request body — expected JSON." }, { status: 400 });
   }
 
   if (!model || !isKnownModel(model)) {
@@ -52,7 +84,8 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, stream: true }),
     });
-  } catch {
+  } catch (error) {
+    logRouteError("POST /api/ollama/pull (fetch)", error);
     return NextResponse.json(
       { ok: false, error: "Cannot reach Ollama to start the download. Make sure it's running." },
       { status: 503 },

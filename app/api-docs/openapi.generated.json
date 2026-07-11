@@ -1,0 +1,582 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Awesome RAG Forge API",
+    "version": "0.1.0",
+    "description": "Read-only RAG chat/knowledge-base API, plus one narrow write endpoint (POST /api/feedback) that can only ever create a RagFeedback row. All knowledge writes happen exclusively through the MCP server (mcp/rag-manager), which this API cannot reach — see docs/architecture.md. Generate a client in any language from this spec with https://openapi-generator.tech."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as this deployment"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "APP_API_KEY, sent as `Authorization: Bearer <key>`. Only enforced when APP_API_KEY is configured server-side; required (fail-closed) on Vercel deployments. See lib/testing-api-auth.ts."
+      }
+    }
+  },
+  "paths": {
+    "/api/rag": {
+      "get": {
+        "summary": "Debug/inspection endpoint for raw retrieval output",
+        "description": "Returns the same prompt blocks and citations the chat route retrieves, without generating a reply — useful for verifying retrieval independent of the LLM.",
+        "tags": [
+          "Chat"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retrieved context returned"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/rag/harness": {
+      "get": {
+        "summary": "Testing UI: approved assistant identity and harness",
+        "description": "Read-only testing-surface endpoint for showing the approved assistant identity, capabilities, and restrictions. Harness proposal, approval, rejection, and review remain MCP-only.",
+        "tags": [
+          "Harness"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Harness configuration retrieved"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/rag/documents/{id}/download": {
+      "get": {
+        "summary": "Download an approved document's stored original file",
+        "description": "Requires the document to be status APPROVED with a non-null storageKey. Redirects to a short-lived presigned URL by default, or returns it as JSON with ?format=json.",
+        "tags": [
+          "Documents"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json"
+              ]
+            },
+            "description": "Pass \"json\" to receive { ok, url } instead of a 307 redirect."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Presigned URL returned as JSON (only with ?format=json)"
+          },
+          "307": {
+            "description": "Redirect to a short-lived presigned download URL"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled, or no downloadable file for this document"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/rag/context": {
+      "get": {
+        "summary": "Advanced integration: assistant context bundle",
+        "description": "Advanced read-only integration endpoint. Returns the same end-user-facing system prompt, approved harness rules, knowledge-base scope, citations, and retrieved RAG context used by /api/chat. This is not a creator/admin endpoint and never exposes drafts, rejected knowledge, feedback review queues, or MCP-only workflow state.",
+        "tags": [
+          "Chat"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Context bundle retrieved"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/rag/collections": {
+      "get": {
+        "summary": "List approved collections",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collections retrieved"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/rag/collections/{collectionId}": {
+      "get": {
+        "summary": "Paginated detail for one approved collection",
+        "tags": [
+          "Collections"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection detail retrieved"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled, or collection not found"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/ollama/status": {
+      "get": {
+        "summary": "Check whether Ollama is running and which models are installed",
+        "tags": [
+          "Ollama"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "installedModels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "availableModels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "canAutoStart": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/ollama/start": {
+      "post": {
+        "summary": "Attempt to launch Ollama on this machine",
+        "description": "Local-only, non-production — never targets any machine other than the one this server process is already running on.",
+        "tags": [
+          "Ollama"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ollama started (or was already running)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Auto-start not available in this environment"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "500": {
+            "description": "Ollama is not installed, or failed to start"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/ollama/pull": {
+      "post": {
+        "summary": "Stream a model download's progress from Ollama",
+        "description": "Local-only, non-production. The requested model must be one of the fixed AVAILABLE_MODELS.",
+        "tags": [
+          "Ollama"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Newline-delimited JSON progress stream, passed through from Ollama unmodified",
+            "content": {
+              "application/x-ndjson": {}
+            }
+          },
+          "400": {
+            "description": "Invalid body, unknown model, or auto-start not available in this environment"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "502": {
+            "description": "Ollama returned an error starting the download"
+          },
+          "503": {
+            "description": "Database unreachable, or cannot reach Ollama"
+          }
+        }
+      }
+    },
+    "/api/feedback": {
+      "post": {
+        "summary": "Record a thumbs up/down reaction to an answer",
+        "description": "The one narrow, deliberate exception to \"the chat app never writes\" — this route can only create a RagFeedback row from an end-user reaction. Feedback review, resolution, eval creation, and any follow-up knowledge or harness changes remain MCP-only.",
+        "tags": [
+          "Feedback"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "rating"
+                ],
+                "properties": {
+                  "question": {
+                    "type": "string"
+                  },
+                  "answer": {
+                    "type": "string"
+                  },
+                  "rating": {
+                    "type": "string",
+                    "enum": [
+                      "GOOD",
+                      "BAD"
+                    ]
+                  },
+                  "documentIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Cited source document IDs, capped at 10."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feedback recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or unrecognized rating"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "summary": "Generate a chat reply grounded in approved knowledge",
+        "description": "Read-only. Builds the assistant's system prompt (identity, harness rules, retrieved context) and forwards the conversation to the active ChatProvider (Ollama by default). Never writes to the database.",
+        "tags": [
+          "Chat"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "bot",
+                            "user"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Must be one of the active provider's known models; unrecognized values fall back to the default."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reply generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reply": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The assistant's configured display name, never the underlying model/provider."
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "documentId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "downloadable": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "502": {
+            "description": "Model backend returned an error"
+          },
+          "503": {
+            "description": "Database unreachable, or model backend unreachable"
+          }
+        }
+      }
+    }
+  },
+  "tags": []
+}

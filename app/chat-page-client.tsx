@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Check, Copy, Download, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { testingFetch } from "@/lib/testing-api-client";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -88,7 +89,7 @@ export default function Home() {
 
   async function checkOllamaStatus(): Promise<OllamaStatusResponse | null> {
     try {
-      const response = await fetch("/api/ollama/status");
+      const response = await testingFetch("/api/ollama/status");
       const data = (await response.json()) as OllamaStatusResponse;
       setInstalledModels(data.installedModels ?? []);
       setAvailableModels(data.availableModels ?? []);
@@ -111,7 +112,7 @@ export default function Home() {
     setServerStatus("starting");
 
     try {
-      const response = await fetch("/api/ollama/start", { method: "POST" });
+      const response = await testingFetch("/api/ollama/start", { method: "POST" });
       const data = (await response.json()) as { ok: boolean; error?: string };
 
       if (!data.ok) {
@@ -148,7 +149,7 @@ export default function Home() {
     setPullStatusText(null);
 
     try {
-      const response = await fetch("/api/ollama/pull", {
+      const response = await testingFetch("/api/ollama/pull", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: selectedModel }),
@@ -231,7 +232,7 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await testingFetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -285,7 +286,7 @@ export default function Home() {
   async function submitFeedback(message: ChatMessage, rating: FeedbackRating) {
     setFeedbackByMessage((current) => ({ ...current, [message.id]: rating }));
     try {
-      await fetch("/api/feedback", {
+      await testingFetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -298,6 +299,19 @@ export default function Home() {
     } catch {
       // Best-effort — feedback isn't on the critical path, so a failed
       // submission shouldn't interrupt or alarm the user.
+    }
+  }
+
+  async function downloadSource(source: ChatSource) {
+    try {
+      const response = await testingFetch(`/api/rag/documents/${source.documentId}/download?format=json`);
+      if (!response.ok) return;
+      const data = (await response.json()) as { url?: string };
+      if (data.url) {
+        window.open(data.url, "_blank", "noopener,noreferrer");
+      }
+    } catch {
+      // Download is a convenience action; the API auth banner handles 401s.
     }
   }
 
@@ -473,16 +487,15 @@ export default function Home() {
                       {message.sources
                         .filter((source) => source.downloadable)
                         .map((source) => (
-                          <a
+                          <button
                             key={source.documentId}
-                            href={`/api/rag/documents/${source.documentId}/download`}
-                            target="_blank"
-                            rel="noreferrer"
+                            type="button"
+                            onClick={() => downloadSource(source)}
                             className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50"
                           >
                             <Download className="size-3" />
                             {source.title}
-                          </a>
+                          </button>
                         ))}
                     </div>
                   )}

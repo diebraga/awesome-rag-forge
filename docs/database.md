@@ -14,7 +14,11 @@ If you later want a real migration history (recommended before production), swit
 
 ## Datasource
 
-Any Postgres-compatible database works, including [Prisma Postgres](https://www.prisma.io/postgres) or a plain local Postgres instance. Set `DATABASE_URL` in `.env` (see [Environment Variables](environment-variables.md)).
+Any Postgres-compatible database with `pgvector` works, including [Prisma Postgres](https://www.prisma.io/postgres), Supabase, Neon, RDS/Postgres with the extension enabled, or the included Docker local Postgres service. See [Local Postgres Setup](local-postgres.md) for the Docker-first path. Set `DATABASE_URL` in `.env` (see [Environment Variables](environment-variables.md)); `.env.example` leaves it empty so setup agents must ask the user for a real connection string instead of guessing.
+
+This project is domain-agnostic, not database-engine-agnostic. It does **not** currently support MongoDB, SQLite, MySQL, or document databases. Supporting those would require changing the Prisma datasource/provider, replacing the `vector(768)`/`pgvector` storage model, and retesting the app and MCP server paths.
+
+If `DATABASE_URL` is present but unreachable or invalid, the app shows a database connection error before rendering the testing surface, and testing API routes return `503` with a sanitized setup message. The UI/API must never echo the full connection string or raw provider error because it may contain credentials.
 
 The schema uses `Unsupported("vector(768)")` for the chunk embedding column, which requires the `pgvector` extension to be available on your Postgres instance (most managed Postgres-compatible providers, including Prisma Postgres, support this).
 

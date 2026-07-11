@@ -24,7 +24,7 @@ Both `lib/prisma.ts` and `mcp/rag-manager/prisma.ts` are server-only. Never impo
 
 ## Storage gating
 
-Original file uploads (`attach_document_file`, `approve_file_upload`) are refused unless `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY` are all set (see `lib/storage.ts`). This prevents silently writing files to an unconfigured or default location. Extracted text may still be stored in the database without storage configured — only the original file bytes require it.
+Original file storage is refused unless `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY` are all set (see `lib/storage.ts`). This prevents silently writing original files to an unconfigured or default location. Extracted PDF text may still be stored in the database without storage configured; `approve_file_upload` and `approve_file_upload_batch` fall back to text-only storage when `storeOriginalFile: true` but storage is missing. `attach_document_file` still refuses outright because its only purpose is attaching an original file.
 
 The bucket itself should be kept private (no public-read policy). `lib/storage.ts`'s `getDownloadUrl()` generates a presigned `GetObject` URL that expires after 5 minutes, and `GET /api/rag/documents/[id]/download` is the only code path that calls it — gated to `status: APPROVED` documents with a non-null `storageKey`, same as every other read in `app/`. Never add a route or tool that returns a longer-lived or unauthenticated direct bucket URL; always go through `getDownloadUrl()` so the expiry and the APPROVED-only gate stay in one place.
 
@@ -76,13 +76,27 @@ Every tool in `mcp/rag-manager/server.ts` that writes to the database takes a `u
 
 ## Testing surface exposure gate
 
-The Next.js testing surface is hidden unless `ENABLE_TESTING_SURFACE=true`. When disabled, the testing pages render 404 and the supporting API routes return 404 JSON. This includes `/`, `/collections`, `/harness`, `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*`.
+The Next.js testing surface is enabled only when `ENABLE_TESTING_SURFACE=true`. `.env.example` sets it to true for local clones, but missing/unset is disabled. When disabled, the testing pages render a disabled-mode message and the supporting API routes return 404 JSON. This includes `/`, `/collections`, `/harness`, `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*`.
 
-This is not a replacement for authentication. It is an exposure switch that prevents accidental public deployment of local testing tools while auth is still absent. Do not remove the guard to make a deployed route work; either intentionally enable the flag in a trusted environment or add authentication first. See [Testing Surface](testing-surface.md).
+This is the outer exposure switch. The enabled testing API routes also support `APP_API_KEY`: if the key is configured, requests must send `Authorization: Bearer <key>`; if a Vercel deployment explicitly enables the testing surface without configuring the key, pages show setup instructions and APIs return `503`. Local clones can leave the key blank for frictionless use. Do not remove the guard to make a deployed route work; intentionally enable the flag and configure the key, or keep it closed. See [Testing Surface](testing-surface.md).
 
-## `GET /api/rag/context` has no authentication yet
+Reviewed and confirmed intentional: defaulting `true` in `.env.example` (a local template file) is not a vulnerability, because deployment targets don't inherit from it — each one (Vercel, another host) has its own separately-configured environment, and exposing the surface anywhere but a local checkout requires an operator to deliberately set the var in that environment themselves. Don't flag or "fix" this default without re-reading this note first.
 
-This endpoint returns identity, knowledge-base scope, and retrieved chunks — no secrets, but it is a write-free integration surface intended for local/MVP use. If you deploy this app or otherwise expose it beyond your own machine, add authentication (an API key, at minimum) before doing so.
+## Testing API authentication
+
+`APP_API_KEY` protects the Next.js testing API routes when configured: `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*`. The same shared readiness gate checks database health, `ENABLE_TESTING_SURFACE`, and then API-key auth before route-specific code runs. Expected failures return JSON and never expose raw database/provider errors.
+
+This key is for the web testing surface only. The default MCP server runs over stdio on the user's machine and does not need or use an MCP API key. The user still needs local database access, and destructive MCP actions still require explicit user approval.
+
+## `/api-docs` and `/api-docs/openapi.json` follow testing-surface readiness
+
+The Swagger UI page and generated OpenAPI JSON are only available when the database is configured/reachable and `ENABLE_TESTING_SURFACE=true`. Otherwise `/api-docs` shows the same database setup, connection-error, or disabled-mode instructions as the rest of the testing UI, and `/api-docs/openapi.json` returns the same JSON readiness errors.
+
+The spec still only describes API shape — paths, request/response schemas, and the `bearerAuth` security scheme. Do not add real data, example responses containing live content, or secrets to `@swagger` annotations.
+
+### OpenAPI surface boundary
+
+Only document the testing/client HTTP surface in Swagger: chat, feedback capture, approved read-only context/collections/harness display, document downloads, and local Ollama helper routes. Do not add MCP-only workflows to OpenAPI: knowledge creation/update/archive, harness proposal/review, feedback review/resolution, eval creation, or anything that exposes drafts/rejected records/all statuses.
 
 ## `POST /api/ollama/start` executes a process — scoped deliberately
 
@@ -110,7 +124,7 @@ Every other route in `app/` is read-only; this is the single, deliberate excepti
 - It can only call `prisma.ragFeedback.create(...)`. There is no code path from `app/api/feedback/route.ts` to `RagChunk`, `RagDocument`, `RagCollection`, or `HarnessRule` — adding one would be exactly the kind of write-path expansion the chat app's non-negotiable rule exists to prevent (see `CLAUDE.md`/`CODEX.md`/etc.'s "Non-negotiable rules").
 - `rating` is validated against a hardcoded allowlist (`GOOD`/`BAD` only, a subset of the full `RagFeedbackRating` enum) — an arbitrary client-supplied string is refused with a `400`, the same "validate against a fixed list, never trust the request body" pattern used for `model` in `/api/chat` and `/api/ollama/pull`.
 - `question`/`answer` text is length-capped before storage (`MAX_TEXT_LENGTH`) — this is a lightweight reaction record, not a place for unbounded user input to accumulate.
-- No authentication exists on this route, same MVP posture as every other route in `app/` today (see "`GET /api/rag/context` has no authentication yet" below) — a `RagFeedback` row can't affect what the assistant knows or does, so the impact of that gap is low today, but revisit it before this route is ever reachable beyond your own machine.
+- The shared testing API gate applies here too: if `APP_API_KEY` is configured, this route requires `Authorization: Bearer <key>` before it can create the feedback row.
 - Feedback submitted here and feedback submitted through the MCP server's `add_feedback` tool land in the same `RagFeedback` table and are read the same way — this route doesn't create a second, divergent feedback mechanism, it's just a second entry point into the one that already existed.
 
 ## Automated PR security review

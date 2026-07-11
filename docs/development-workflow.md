@@ -8,7 +8,7 @@ Minimum requirements to run this project locally — nothing else is needed for 
 | --- | --- | --- |
 | **Node.js ≥ 20.9** | Runs Next.js, the MCP server (`tsx`), and all scripts | Pinned in `package.json`'s `engines` field. Check with `node -v`. |
 | **npm** | Package installation | Ships with Node. |
-| **PostgreSQL with the `pgvector` extension** | `RagChunk.embedding` is a `vector(768)` column — `npx prisma db push` fails without it | Most managed Postgres providers (Neon, Supabase, Prisma Postgres, RDS w/ the extension enabled) support this out of the box. Self-hosting Postgres: `CREATE EXTENSION IF NOT EXISTS vector;` before the first `db push`. |
+| **PostgreSQL with the `pgvector` extension** | `RagChunk.embedding` is a `vector(768)` column — `npx prisma db push` fails without it | Most managed Postgres providers (Neon, Supabase, Prisma Postgres, RDS w/ the extension enabled) support this out of the box. For local setup, see [Local Postgres Setup](local-postgres.md). |
 | **[Ollama](https://ollama.com)**, running, with a model pulled | Backs the chat's `/api/chat` route | Not required to browse Collections/Harness or to manage knowledge through the MCP server — only the chat feature needs it. `ollama pull qwen2.5:7b-instruct` (or whatever `OLLAMA_MODEL` is set to). |
 | **An MCP client** (Claude Desktop, Claude Code, Codex CLI, etc.) | The chat app is read-only by design — nothing can be added, approved, or archived without an MCP client calling `mcp/rag-manager`'s tools | See [MCP Server](mcp-server.md#connecting-to-claude-desktop-or-codex) for client setup. |
 
@@ -28,11 +28,18 @@ This template sets `DEVELOPER_MODE=true` so developers can intentionally modify 
 
 ## First-time local setup
 
+First choose the database path:
+
+- Paste an existing Postgres `DATABASE_URL` with `pgvector` enabled, or
+- Ask the assistant to create a local Postgres database with Docker. See [Local Postgres Setup](local-postgres.md).
+
+Then run:
+
 ```bash
 git clone <your-fork-or-repo-url>
 cd awesome-rag-forge
 npm install
-cp .env.example .env   # then fill in DATABASE_URL
+cp .env.example .env   # then fill DATABASE_URL, or use the local Docker URL from docs/local-postgres.md
 npx prisma generate
 npx prisma db push
 npm run db:seed
@@ -65,7 +72,11 @@ Normally you don't run this manually — an MCP client (Claude Desktop, Codex) l
 | `npm run lint` | ESLint. |
 | `npm run db:push` | Apply the Prisma schema to your database (`prisma db push`). |
 | `npm run db:seed` | Run `prisma/seed.ts`. |
+| `npm run db:local:up` | Start the included local Postgres + pgvector Docker service. |
+| `npm run db:local:down` | Stop and remove the local Docker service container while keeping its named volume. |
+| `npm run db:local:logs` | Tail logs for the local Docker Postgres service. |
 | `npm run mcp:rag-manager` | Start the MCP server on stdio. |
+| `npm run generate:openapi` | Regenerate `app/api-docs/openapi.generated.json` from `@swagger` JSDoc comments in `app/api/**/route.ts`. Also runs automatically before `npm run build` (`prebuild`). See [API Routes](api-routes.md#api-docs-and-openapi-spec-api-docs-api-docsopenapijson). |
 
 ## Making schema changes
 

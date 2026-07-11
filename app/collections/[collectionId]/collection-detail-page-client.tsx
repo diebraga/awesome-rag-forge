@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+import { testingFetch } from "@/lib/testing-api-client";
 type CollectionDetailChunk = {
   id: string;
   chunkText: string;
@@ -101,7 +102,7 @@ export default function CollectionDetailPage({
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/rag/collections/${collectionId}?page=${page}&pageSize=10`)
+    testingFetch(`/api/rag/collections/${collectionId}?page=${page}&pageSize=10`)
       .then((response) => response.json())
       .then((json: CollectionDetailResponse) => {
         if (cancelled) return;

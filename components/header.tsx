@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "/", label: "Chat" },
   { href: "/collections", label: "Collections" },
   { href: "/harness", label: "Harness" },
+  { href: "/api-docs", label: "API Docs" },
 ];
 
 export function Header({ testingSurfaceEnabled }: { testingSurfaceEnabled: boolean }) {

@@ -25,6 +25,7 @@ The propose→approve write paths and the chat UI still require manual verificat
 11. **Editing works**: call `propose_chunk_update` on an `APPROVED` chunk, confirm the diff looks right and `willReenterReview: true`. Call `approve_chunk_update` with `userApproval: true`, confirm the chunk's status is now `PENDING_REVIEW` (not still `APPROVED`) and it stops showing up in retrieved chat context. `approve_chunk` it again and confirm the *new* text is what the chat now returns.
 12. **Chat provider refactor didn't change behavior**: with `CHAT_PROVIDER` unset (defaults to `ollama`), the chat UI must behave identically to before — same connect/status/model-pull flow, same reply shape. If you add a second provider later, add this same check for it.
 13. **HTTP transport works**: `npm run mcp:rag-manager:http`, then connect with the MCP TypeScript SDK's `Client` + `StreamableHTTPClientTransport` against `http://127.0.0.1:$MCP_HTTP_PORT/mcp` (default port `3200`) and confirm `listTools()` returns the full tool list and a real tool call (e.g. `list_collections`) succeeds.
+14. **OpenAPI spec is complete and up to date**: `npm run generate:openapi`, confirm `app/api-docs/openapi.generated.json` lists all routes. Visit `/api-docs` with a connected database and `ENABLE_TESTING_SURFACE=true`, confirm Swagger renders and "Download spec" works. With testing disabled or no database, confirm the page shows setup/disabled instructions instead of Swagger.
 
 ## Suggested future additions
 

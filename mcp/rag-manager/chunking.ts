@@ -1,6 +1,28 @@
 const MAX_CHUNK_CHARS = 1600;
 const MIN_PARAGRAPH_CHARS = 40;
 
+export function normalizeTextForRag(sourceText: string) {
+  return sourceText
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\f/g, "\n\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\t/g, " ")
+    .replace(/([A-Za-z])-[ \t]*\n[ \t]*([A-Za-z])/g, "$1$2")
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph
+        .split("\n")
+        .map((line) => line.trim().replace(/[ \t]{2,}/g, " "))
+        .filter(Boolean)
+        .join(" ")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export type ProposedChunk = {
   chunkIndex: number;
   chunkText: string;
@@ -14,7 +36,7 @@ export function estimateTokens(text: string) {
 }
 
 function cleanParagraphs(sourceText: string) {
-  return sourceText
+  return normalizeTextForRag(sourceText)
     .replace(/\r\n/g, "\n")
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
@@ -86,7 +108,7 @@ export function chunkPdfPages(pages: ExtractedPageInput[]): ProposedChunk[] {
   const chunks: ProposedChunk[] = [];
 
   for (const page of pages) {
-    const text = page.text.trim();
+    const text = normalizeTextForRag(page.text);
     if (!text) continue;
 
     const paragraphs = text

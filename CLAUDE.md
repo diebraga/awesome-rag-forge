@@ -18,6 +18,7 @@ Load only what's relevant to your current task:
 - [Repository Structure](docs/repository-structure.md) — where things live.
 - [System Architecture](docs/architecture.md) — chat path vs. knowledge-management path.
 - [Database & Prisma](docs/database.md) — schema, `db push` workflow, generic fields.
+- [Local Postgres Setup](docs/local-postgres.md) — Docker-first local Postgres + pgvector setup.
 - [RAG Architecture](docs/rag.md) — chunking, retrieval, review loop, feedback/eval.
 - [Feedback Review Loop](docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
 - [MCP Server](docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
@@ -37,11 +38,11 @@ Full table: [docs/development-workflow.md#prerequisites](docs/development-workfl
 
 If you're setting this project up, debugging a failed `npm run dev`/`npm run build`/`npx prisma db push`, or a user reports something not working and a missing prerequisite could be why:
 
-1. **Check first, don't assume.** `node -v` for Node; try connecting to `DATABASE_URL` and check for the `vector` extension; `curl $OLLAMA_URL` or check the chat UI's connection indicator for Ollama.
+1. **Ask about the database first if `DATABASE_URL` is missing.** Give the user two choices: paste an existing Postgres `DATABASE_URL` with `pgvector`, or approve creating a local Postgres database for this project. This project is not database-engine-agnostic: MongoDB, SQLite, MySQL, and document databases require code changes. Then check, don't assume: `node -v` for Node; try connecting to `DATABASE_URL` and check for the `vector` extension; `curl $OLLAMA_URL` or check the chat UI's connection indicator for Ollama.
 2. **Tell the user plainly what's missing and why it matters** — don't just fail silently or blame something else.
-3. **Attempt to fix what's safely automatable yourself**: `npm install` for missing packages, `CREATE EXTENSION IF NOT EXISTS vector;` if the database is reachable but the extension isn't enabled, running `ollama pull <model>` if Ollama is installed and running but the model isn't. Say what you're about to do before doing it, same as any other command.
-4. **Never install system-level software (Node itself, Postgres, Ollama, an MCP client) without asking first** — offer to (e.g. `brew install ollama` on macOS) but confirm before running it.
-5. **Never fabricate, guess, or auto-generate secrets** (`DATABASE_URL`, `STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY`, etc.). These always require the user to obtain them from a real provider and add them to `.env` themselves — point them at [Environment Variables](docs/environment-variables.md) and, for storage, R2/S3 bucket setup steps, rather than inventing a placeholder that would fail silently later.
+3. **Attempt to fix what's safely automatable yourself**: `npm install` for missing packages, `npm run db:local:up` after the user approves local Docker Postgres, `CREATE EXTENSION IF NOT EXISTS vector;` if an existing database is reachable but the extension isn't enabled, running `ollama pull <model>` if Ollama is installed and running but the model isn't. Say what you're about to do before doing it, same as any other command.
+4. **Never install system-level software (Node itself, Docker Desktop, native Postgres, Ollama, an MCP client) without asking first** — offer to (e.g. `brew install ollama` on macOS) but confirm before running it.
+5. **Ask about optional bucket storage after `DATABASE_URL`: buckets are only needed to preserve original PDFs for download; text/OCR ingest works without them. If the user is intentionally exposing the web testing surface online, ask them to set `APP_API_KEY`; do not ask for an MCP API key for the default local stdio MCP server. Never fabricate, guess, or auto-generate secrets** (`DATABASE_URL`, `STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY`, etc.). These always require the user to obtain them from a real provider and add them to `.env` themselves — point them at [Environment Variables](docs/environment-variables.md) and, for storage, R2/S3 bucket setup steps, rather than inventing a placeholder that would fail silently later.
 
 ## Non-negotiable rules
 

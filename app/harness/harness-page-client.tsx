@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { testingFetch } from "@/lib/testing-api-client";
 type HarnessResponse = {
   ok: boolean;
   name?: string;
@@ -32,7 +33,7 @@ export default function HarnessPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/rag/harness")
+    testingFetch("/api/rag/harness")
       .then((response) => response.json())
       .then((result: HarnessResponse) => {
         if (cancelled) return;

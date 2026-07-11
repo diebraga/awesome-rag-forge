@@ -10,7 +10,7 @@
 
 ## Testing surface is off by default
 
-`ENABLE_TESTING_SURFACE` defaults to disabled, and a missing Vercel env var is treated as disabled. With the flag off, the chat, Collections, and Harness pages return 404, the header omits their links, and the supporting `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*` routes return 404 JSON. This lets you deploy the app without accidentally publishing the local testing UI before authentication exists.
+`.env.example` defaults `ENABLE_TESTING_SURFACE=true` for local project use, but a missing Vercel env var is treated as disabled. With the flag off, the chat, Collections, and Harness pages show a disabled-mode message with instructions, the header omits their links, and the supporting `/api/chat`, `/api/feedback`, `/api/rag*`, and `/api/ollama*` routes return 404 JSON. This lets you deploy the app without accidentally publishing the local testing endpoints. If you intentionally set `ENABLE_TESTING_SURFACE=true` in a deployed environment, also set `APP_API_KEY`; otherwise the pages show setup instructions and the APIs return `503`.
 
 Set `ENABLE_TESTING_SURFACE=true` only for a private/local testing deployment, or after you have added authentication. The MCP server is unaffected by this flag; it remains a separate local process. See [Testing Surface](testing-surface.md).
 

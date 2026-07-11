@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
+import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
+import { routeErrorResponse } from "@/lib/api-errors";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -30,24 +31,70 @@ function truncate(value: string | undefined) {
   return value.length > MAX_TEXT_LENGTH ? value.slice(0, MAX_TEXT_LENGTH) : value;
 }
 
+/**
+ * @swagger
+ * /api/feedback:
+ *   post:
+ *     summary: Record a thumbs up/down reaction to an answer
+ *     description: The one narrow, deliberate exception to "the chat app never writes" — this route can only create a RagFeedback row from an end-user reaction. Feedback review, resolution, eval creation, and any follow-up knowledge or harness changes remain MCP-only.
+ *     tags: [Feedback]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rating]
+ *             properties:
+ *               question: { type: string }
+ *               answer: { type: string }
+ *               rating: { type: string, enum: [GOOD, BAD] }
+ *               documentIds:
+ *                 type: array
+ *                 items: { type: string }
+ *                 description: Cited source document IDs, capped at 10.
+ *     responses:
+ *       200:
+ *         description: Feedback recorded
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 ok: { type: boolean }
+ *                 id: { type: string }
+ *       400:
+ *         description: Invalid body or unrecognized rating
+ *       401:
+ *         description: Missing/invalid API key (only when APP_API_KEY is configured)
+ *       404:
+ *         description: Testing surface disabled
+ *       503:
+ *         description: Database unreachable
+ */
 export async function POST(request: Request) {
-  if (!isTestingSurfaceEnabled()) {
+  const readinessFailure = await getTestingApiReadinessFailure(request);
+
+  if (readinessFailure) {
+    return readinessFailure;
+  }
+
+  let body: FeedbackRequest;
+  try {
+    body = (await request.json()) as FeedbackRequest;
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid request body — expected JSON." }, { status: 400 });
+  }
+
+  if (!body.rating || !ALLOWED_RATINGS.has(body.rating)) {
     return NextResponse.json(
-      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
-      { status: 404 },
+      { ok: false, error: `rating must be one of: ${[...ALLOWED_RATINGS].join(", ")}` },
+      { status: 400 },
     );
   }
 
   try {
-    const body = (await request.json()) as FeedbackRequest;
-
-    if (!body.rating || !ALLOWED_RATINGS.has(body.rating)) {
-      return NextResponse.json(
-        { ok: false, error: `rating must be one of: ${[...ALLOWED_RATINGS].join(", ")}` },
-        { status: 400 },
-      );
-    }
-
     const documentIds = Array.isArray(body.documentIds)
       ? body.documentIds.filter((id): id is string => typeof id === "string").slice(0, 10)
       : undefined;
@@ -63,12 +110,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, id: feedback.id });
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : "Unable to record feedback.",
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse("POST /api/feedback", error, "Unable to record feedback.");
   }
 }

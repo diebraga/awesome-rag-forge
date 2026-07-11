@@ -7,6 +7,7 @@ import type { Prisma } from "../../generated/prisma/client";
 import {
   feedbackRatingSchema,
   proposalSchema,
+  type SourceProposal,
   sourceTypeSchema,
   statusSchema,
   buildSourceProposal,
@@ -67,6 +68,173 @@ const feedbackSortSchema = z.enum(["newest", "oldest", "priority"]);
 
 const NEGATIVE_FEEDBACK_RATINGS = ["BAD", "INCOMPLETE", "UNSAFE", "OUTDATED"] as const;
 const FEEDBACK_PREVIEW_LENGTH = 180;
+
+type FileUploadProposalResult = {
+  proposal: SourceProposal;
+  fileName: string;
+  fileBase64: string;
+  ocrPageCount: number;
+  extractedPageCount: number;
+};
+
+async function analyzePdfUpload(input: {
+  fileName: string;
+  fileBase64: string;
+  title?: string;
+  category?: string;
+  domain?: string;
+  tags?: string[];
+  collectionId?: string;
+}): Promise<FileUploadProposalResult> {
+  if (input.fileBase64.length > MAX_UPLOAD_BASE64_CHARS) {
+    throw new Error(
+      `Refused: ${input.fileName} is too large (~${Math.round(input.fileBase64.length / 1_000_000)}MB base64). Limit is ~15MB of original file data.`,
+    );
+  }
+
+  const buffer = Buffer.from(input.fileBase64, "base64");
+  if (!looksLikePdf(buffer)) {
+    throw new Error(`Refused: ${input.fileName} does not look like a PDF file (missing %PDF header). Only PDF uploads are supported right now.`);
+  }
+
+  const pages = await extractTextFromPdf(buffer);
+  const ocrPageCount = pages.filter((page) => page.ocrUsed).length;
+  const proposal = await buildFileProposal({
+    fileName: input.fileName,
+    pages,
+    ocrPageCount,
+    title: input.title,
+    category: input.category,
+    domain: input.domain,
+    tags: input.tags,
+    collectionId: input.collectionId,
+  });
+
+  return {
+    proposal,
+    fileName: input.fileName,
+    fileBase64: input.fileBase64,
+    ocrPageCount,
+    extractedPageCount: pages.length,
+  };
+}
+
+async function persistFileUpload(input: {
+  proposal: SourceProposal;
+  fileName: string;
+  fileBase64: string;
+  storeOriginalFile: boolean;
+}) {
+  const { proposal, fileName, fileBase64, storeOriginalFile } = input;
+
+  const willStoreFile = storeOriginalFile && isStorageConfigured();
+  const storageFallbackNotice =
+    storeOriginalFile && !willStoreFile
+      ? `${STORAGE_NOT_CONFIGURED_MESSAGE} Falling back to saving only the extracted text — the original file was not stored.`
+      : null;
+
+  let storageKey: string | null = null;
+  if (willStoreFile) {
+    const buffer = Buffer.from(fileBase64, "base64");
+    storageKey = `documents/${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    await uploadFileToStorage(storageKey, buffer, "application/pdf");
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const collection = proposal.shouldCreateCollection
+      ? await tx.ragCollection.create({
+          data: {
+            name: proposal.proposedCollection.name,
+            description: proposal.proposedCollection.description,
+            category: proposal.proposedCollection.category,
+            domain: proposal.proposedCollection.domain,
+            tags: proposal.proposedCollection.tags,
+          },
+        })
+      : await tx.ragCollection.findUniqueOrThrow({
+          where: { id: proposal.proposedCollection.id },
+        });
+
+    const document = await tx.ragDocument.create({
+      data: {
+        collectionId: collection.id,
+        title: proposal.proposedDocument.title,
+        sourceType: toRagSourceType(proposal.proposedDocument.sourceType),
+        category: proposal.proposedDocument.category,
+        domain: proposal.proposedDocument.domain,
+        tags: proposal.proposedDocument.tags,
+        status: "PENDING_REVIEW",
+        storageKey,
+        metadata: {
+          insertedBy: "rag-manager-mcp",
+          originalFileName: fileName,
+          fileStored: willStoreFile,
+          warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
+        },
+      },
+    });
+
+    const chunks = [];
+    for (const chunk of proposal.chunkPlan) {
+      const createdChunk = await tx.ragChunk.create({
+        data: {
+          documentId: document.id,
+          chunkText: chunk.chunkText,
+          chunkIndex: chunk.chunkIndex,
+          sectionTitle: chunk.sectionTitle,
+          tokenCount: chunk.tokenCount,
+          pageNumber: chunk.pageNumber,
+          status: "PENDING_REVIEW",
+          metadata: {
+            insertedBy: "rag-manager-mcp",
+          },
+        },
+      });
+
+      await tx.ragSource.create({
+        data: {
+          documentId: document.id,
+          chunkId: createdChunk.id,
+          label: proposal.sourcePlan.label,
+          citationText: proposal.sourcePlan.citationText,
+          sectionTitle: chunk.sectionTitle,
+          pageNumber: chunk.pageNumber,
+        },
+      });
+
+      chunks.push(createdChunk);
+    }
+
+    return { collection, document, chunks };
+  });
+
+  return { result, willStoreFile, storageFallbackNotice };
+}
+
+function collectionSignature(proposal: SourceProposal) {
+  return JSON.stringify({
+    name: proposal.proposedCollection.name,
+    category: proposal.proposedCollection.category ?? null,
+    domain: proposal.proposedCollection.domain ?? null,
+    tags: proposal.proposedCollection.tags,
+  });
+}
+
+function batchOrganizationRationale(items: FileUploadProposalResult[]) {
+  const collectionNames = new Set(items.map((item) => item.proposal.proposedCollection.name));
+  const domains = new Set(items.map((item) => item.proposal.proposedDocument.domain).filter(Boolean));
+  const categories = new Set(items.map((item) => item.proposal.proposedDocument.category).filter(Boolean));
+
+  if (collectionNames.size === 1) {
+    return "These files appear to belong together, so the proposal keeps one document per PDF inside a shared collection for cleaner citations, review, downloads, and future archival.";
+  }
+
+  if (domains.size > 1 || categories.size > 1) {
+    return "These files appear to cover different domains or categories, so the proposal keeps one document per PDF and lets each document carry its own classification for better search filtering later.";
+  }
+
+  return "The proposal keeps one document per PDF by default. This preserves file-level citations, page numbers, download links, review decisions, and archive/delete safety while still allowing related documents to share a collection when context supports it.";
+}
 
 type FeedbackReviewRecord = {
   id: string;
@@ -477,40 +645,62 @@ server.registerTool(
     },
   },
   async ({ fileName, fileBase64, title, category, domain, tags, collectionId }) => {
-    if (fileBase64.length > MAX_UPLOAD_BASE64_CHARS) {
-      return textResult(
-        `Refused: file is too large (~${Math.round(fileBase64.length / 1_000_000)}MB base64). Limit is ~15MB of original file data.`,
-      );
+    try {
+      const analyzed = await analyzePdfUpload({ fileName, fileBase64, title, category, domain, tags, collectionId });
+
+      return jsonResult({
+        ...analyzed,
+        requiredUserQuestion:
+          "Do you want me to save this to the knowledge base? And should I also store the original file for download, or extract just the text (nothing kept in storage)?",
+        storageConfigured: isStorageConfigured(),
+        writesToDatabase: false,
+      });
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : "Unable to analyze PDF upload.");
     }
+  },
+);
 
-    const buffer = Buffer.from(fileBase64, "base64");
-    if (!looksLikePdf(buffer)) {
-      return textResult("Refused: this does not look like a PDF file (missing %PDF header). Only PDF uploads are supported right now.");
+server.registerTool(
+  "propose_file_upload_batch",
+  {
+    title: "Propose multiple file uploads",
+    description:
+      "Analyze multiple uploaded PDF files (base64-encoded), extract selectable text with OCR fallback for scanned/image-only pages, sanitize extracted text for efficient RAG chunking, and propose one document per PDF. This tool does not write to the database and does not upload anything to storage. The calling assistant should reason about whether files belong in a shared collection or separate collections based on user-provided context, categories, domains, tags, and file titles. Before calling approve_file_upload_batch, always ask the user to approve the organization and choose for each file or for the whole batch: extract text only, or also store original PDFs for later download.",
+    inputSchema: {
+      files: z.array(
+        z.object({
+          fileName: z.string().min(1),
+          fileBase64: z.string().min(1),
+          title: z.string().optional(),
+          category: z.string().optional(),
+          domain: z.string().optional(),
+          tags: z.array(z.string()).optional(),
+          collectionId: z.string().optional(),
+        }),
+      ).min(1),
+    },
+  },
+  async ({ files }) => {
+    try {
+      const analyzed = [];
+      for (const file of files) {
+        analyzed.push(await analyzePdfUpload(file));
+      }
+
+      return jsonResult({
+        files: analyzed,
+        organizationRationale: batchOrganizationRationale(analyzed),
+        recommendedOrganization:
+          "Keep one document per PDF. Group documents into the same collection when the user context, category/domain/tags, or file titles indicate a shared subject; otherwise keep separate classifications for search precision.",
+        requiredUserQuestion:
+          "Do you approve this organization, and should I store the original PDFs for download or save extracted text only? You can choose once for the whole batch or per file.",
+        storageConfigured: isStorageConfigured(),
+        writesToDatabase: false,
+      });
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : "Unable to analyze PDF upload batch.");
     }
-
-    const pages = await extractTextFromPdf(buffer);
-    const ocrPageCount = pages.filter((page) => page.ocrUsed).length;
-
-    const proposal = await buildFileProposal({
-      fileName,
-      pages,
-      ocrPageCount,
-      title,
-      category,
-      domain,
-      tags,
-      collectionId,
-    });
-
-    return jsonResult({
-      proposal,
-      fileName,
-      fileBase64,
-      requiredUserQuestion:
-        "Do you want me to save this to the knowledge base? And should I also store the original file for download, or extract just the text (nothing kept in storage)?",
-      storageConfigured: isStorageConfigured(),
-      writesToDatabase: false,
-    });
   },
 );
 
@@ -533,88 +723,11 @@ server.registerTool(
       return textResult("Refused to write. userApproval must be true before saving an uploaded file.");
     }
 
-    // Wanting the file stored but storage not being configured is not a
-    // reason to refuse the whole upload — fall back to text-only and say so,
-    // rather than leaving the user with nothing saved at all.
-    const willStoreFile = storeOriginalFile && isStorageConfigured();
-    const storageFallbackNotice =
-      storeOriginalFile && !willStoreFile
-        ? `${STORAGE_NOT_CONFIGURED_MESSAGE} Falling back to saving only the extracted text — the original file was not stored.`
-        : null;
-
-    let storageKey: string | null = null;
-    if (willStoreFile) {
-      const buffer = Buffer.from(fileBase64, "base64");
-      storageKey = `documents/${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      await uploadFileToStorage(storageKey, buffer, "application/pdf");
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      const collection = proposal.shouldCreateCollection
-        ? await tx.ragCollection.create({
-            data: {
-              name: proposal.proposedCollection.name,
-              description: proposal.proposedCollection.description,
-              category: proposal.proposedCollection.category,
-              domain: proposal.proposedCollection.domain,
-              tags: proposal.proposedCollection.tags,
-            },
-          })
-        : await tx.ragCollection.findUniqueOrThrow({
-            where: { id: proposal.proposedCollection.id },
-          });
-
-      const document = await tx.ragDocument.create({
-        data: {
-          collectionId: collection.id,
-          title: proposal.proposedDocument.title,
-          sourceType: toRagSourceType(proposal.proposedDocument.sourceType),
-          category: proposal.proposedDocument.category,
-          domain: proposal.proposedDocument.domain,
-          tags: proposal.proposedDocument.tags,
-          status: "PENDING_REVIEW",
-          storageKey,
-          metadata: {
-            insertedBy: "rag-manager-mcp",
-            originalFileName: fileName,
-            fileStored: willStoreFile,
-            warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
-          },
-        },
-      });
-
-      const chunks = [];
-      for (const chunk of proposal.chunkPlan) {
-        const createdChunk = await tx.ragChunk.create({
-          data: {
-            documentId: document.id,
-            chunkText: chunk.chunkText,
-            chunkIndex: chunk.chunkIndex,
-            sectionTitle: chunk.sectionTitle,
-            tokenCount: chunk.tokenCount,
-            pageNumber: chunk.pageNumber,
-            status: "PENDING_REVIEW",
-            metadata: {
-              insertedBy: "rag-manager-mcp",
-            },
-          },
-        });
-
-        await tx.ragSource.create({
-          data: {
-            documentId: document.id,
-            chunkId: createdChunk.id,
-            label: proposal.sourcePlan.label,
-            citationText: proposal.sourcePlan.citationText,
-            sectionTitle: chunk.sectionTitle,
-            pageNumber: chunk.pageNumber,
-          },
-        });
-
-        chunks.push(createdChunk);
-      }
-
-      return { collection, document, chunks };
+    const { result, willStoreFile, storageFallbackNotice } = await persistFileUpload({
+      proposal,
+      fileName,
+      fileBase64,
+      storeOriginalFile,
     });
 
     return jsonResult({
@@ -625,6 +738,73 @@ server.registerTool(
         : storageFallbackNotice
           ? `${storageFallbackNotice} Its extracted text was still saved as PENDING_REVIEW. A human reviewer must approve its chunks before the live chat can rely on them.`
           : "Extracted text saved as PENDING_REVIEW; the original file was not stored (storeOriginalFile was false). A human reviewer must approve its chunks before the live chat can rely on them.",
+    });
+  },
+);
+
+server.registerTool(
+  "approve_file_upload_batch",
+  {
+    title: "Approve multiple file uploads",
+    description:
+      "Persist previously proposed PDF uploads into the RAG database as PENDING_REVIEW, one document per PDF. Refuses to write unless userApproval is true. Each item can choose storeOriginalFile true/false. If storage is requested but bucket env vars are missing, that item falls back to extracted text only and says so clearly. The calling assistant must ask the user to approve the organization and storage choice before calling this tool.",
+    inputSchema: {
+      files: z.array(
+        z.object({
+          proposal: proposalSchema,
+          fileName: z.string().min(1),
+          fileBase64: z.string().min(1),
+          storeOriginalFile: z.boolean(),
+        }),
+      ).min(1),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ files, userApproval }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before saving uploaded files.");
+    }
+
+    const saved = [];
+    const batchCollections = new Map<string, string>();
+
+    for (const file of files) {
+      let proposal = file.proposal;
+      const signature = collectionSignature(proposal);
+      const existingBatchCollectionId = proposal.shouldCreateCollection ? batchCollections.get(signature) : undefined;
+
+      if (existingBatchCollectionId) {
+        proposal = {
+          ...proposal,
+          shouldCreateCollection: false,
+          proposedCollection: {
+            ...proposal.proposedCollection,
+            id: existingBatchCollectionId,
+          },
+        };
+      }
+
+      const { result, willStoreFile, storageFallbackNotice } = await persistFileUpload({
+        ...file,
+        proposal,
+      });
+
+      if (file.proposal.shouldCreateCollection && !existingBatchCollectionId) {
+        batchCollections.set(signature, result.collection.id);
+      }
+
+      saved.push({
+        fileName: file.fileName,
+        ...result,
+        fileStored: willStoreFile,
+        storageFallback: storageFallbackNotice,
+      });
+    }
+
+    return jsonResult({
+      files: saved,
+      message:
+        "Uploaded PDF text saved as PENDING_REVIEW, one document per file. Files with the same proposed collection were grouped into one collection. A human reviewer must approve chunks before the live chat uses them. Original files are downloadable only for approved documents whose storeOriginalFile choice succeeded.",
     });
   },
 );

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
+import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
+import { routeErrorResponse } from "@/lib/api-errors";
 import { getCollectionDetail } from "@/lib/rag/collections";
 
 /**
@@ -7,15 +8,42 @@ import { getCollectionDetail } from "@/lib/rag/collections";
  * the collection detail page. Same visibility as the chat — see
  * lib/rag/collections.ts.
  */
+/**
+ * @swagger
+ * /api/rag/collections/{collectionId}:
+ *   get:
+ *     summary: Paginated detail for one approved collection
+ *     tags: [Collections]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - name: collectionId
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: page
+ *         in: query
+ *         schema: { type: integer, default: 1 }
+ *       - name: pageSize
+ *         in: query
+ *         schema: { type: integer, default: 10 }
+ *     responses:
+ *       200:
+ *         description: Collection detail retrieved
+ *       401:
+ *         description: Missing/invalid API key (only when APP_API_KEY is configured)
+ *       404:
+ *         description: Testing surface disabled, or collection not found
+ *       503:
+ *         description: Database unreachable
+ */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ collectionId: string }> },
 ) {
-  if (!isTestingSurfaceEnabled()) {
-    return NextResponse.json(
-      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
-      { status: 404 },
-    );
+  const readinessFailure = await getTestingApiReadinessFailure(request);
+
+  if (readinessFailure) {
+    return readinessFailure;
   }
 
   try {
@@ -34,12 +62,6 @@ export async function GET(
 
     return NextResponse.json({ ok: true, ...detail });
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : "Unable to load collection detail.",
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse("GET /api/rag/collections/[collectionId]", error, "Unable to load collection detail.");
   }
 }

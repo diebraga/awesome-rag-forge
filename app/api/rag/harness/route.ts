@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isTestingSurfaceEnabled, TESTING_SURFACE_DISABLED_ERROR } from "@/lib/testing-surface";
+import { getTestingApiReadinessFailure } from "@/lib/api-readiness";
+import { routeErrorResponse } from "@/lib/api-errors";
 import { prisma } from "@/lib/prisma";
 import { getAssistantConfig } from "@/lib/rag/chat-context";
 import { getApprovedHarnessRules } from "@/lib/rag/harness";
@@ -10,12 +11,29 @@ import { getApprovedHarnessRules } from "@/lib/rag/harness";
  * Harness page (app/harness/). Same visibility as the chat — see
  * lib/rag/harness.ts and lib/rag/chat-context.ts.
  */
-export async function GET() {
-  if (!isTestingSurfaceEnabled()) {
-    return NextResponse.json(
-      { ok: false, error: TESTING_SURFACE_DISABLED_ERROR },
-      { status: 404 },
-    );
+/**
+ * @swagger
+ * /api/rag/harness:
+ *   get:
+ *     summary: "Testing UI: approved assistant identity and harness"
+ *     description: Read-only testing-surface endpoint for showing the approved assistant identity, capabilities, and restrictions. Harness proposal, approval, rejection, and review remain MCP-only.
+ *     tags: [Harness]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: Harness configuration retrieved
+ *       401:
+ *         description: Missing/invalid API key (only when APP_API_KEY is configured)
+ *       404:
+ *         description: Testing surface disabled
+ *       503:
+ *         description: Database unreachable
+ */
+export async function GET(request: Request) {
+  const readinessFailure = await getTestingApiReadinessFailure(request);
+
+  if (readinessFailure) {
+    return readinessFailure;
   }
 
   try {
@@ -26,12 +44,6 @@ export async function GET() {
 
     return NextResponse.json({ ok: true, name, instructions, capabilities, restrictions });
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : "Unable to load harness configuration.",
-      },
-      { status: 500 },
-    );
+    return routeErrorResponse("GET /api/rag/harness", error, "Unable to load harness configuration.");
   }
 }

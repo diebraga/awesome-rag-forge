@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
+import { testingFetch } from "@/lib/testing-api-client";
 type CollectionSummary = {
   id: string;
   name: string;
@@ -29,7 +30,7 @@ export default function CollectionsPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/rag/collections")
+    testingFetch("/api/rag/collections")
       .then((response) => response.json())
       .then((data: CollectionsResponse) => {
         if (cancelled) return;

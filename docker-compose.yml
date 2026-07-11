@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: awesome-rag-forge-postgres
+    environment:
+      POSTGRES_USER: awesome_rag_forge
+      POSTGRES_PASSWORD: awesome_rag_forge
+      POSTGRES_DB: awesome_rag_forge
+    ports:
+      - "54329:5432"
+    volumes:
+      - awesome-rag-forge-postgres:/var/lib/postgresql/data
+      - ./scripts/local-postgres-init.sql:/docker-entrypoint-initdb.d/01-vector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U awesome_rag_forge -d awesome_rag_forge"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  awesome-rag-forge-postgres:
