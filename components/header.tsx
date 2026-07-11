@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "/", label: "Chat" },
   { href: "/collections", label: "Collections" },
   { href: "/harness", label: "Harness" },
+  { href: "/schema", label: "Schema" },
   { href: "/api-docs", label: "API Docs" },
 ];
 

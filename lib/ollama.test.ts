@@ -14,6 +14,7 @@ describe("Ollama install plan", () => {
     const plan = getOllamaInstallPlan({ platform: "linux", hasBrew: false });
 
     expect(plan.ok).toBe(false);
+    if (plan.ok) throw new Error("expected a failed plan");
     expect(plan.message).toContain("Install Ollama manually");
   });
 });
