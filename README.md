@@ -26,7 +26,8 @@ If a user drops this repository into an AI coding assistant and asks to set it u
 4. Once the database choice is clear, run the normal setup: `npm install`, copy `.env.example` to `.env`, fill `DATABASE_URL`, `npx prisma generate`, `npx prisma db push`, `npm run db:seed`, then `npm run dev`.
 5. If chat is requested and Ollama is missing, stopped, or missing the configured model, explain the issue and ask permission to install/start/pull as needed. The default model is `qwen2.5:7b-instruct` unless `.env` says otherwise.
 6. Optional bucket credentials are only needed to preserve original uploaded files for later download. If the user does not have them, continue with text/OCR ingestion; do not block setup.
-7. Treat the web app as a read-only testing surface. Knowledge and harness writes happen through the MCP server only, with user approval for write/destructive actions.
+7. Treat the browser UI as a read-only testing surface, not an MCP client. Opening the browser lets the user test approved knowledge; it does not connect the LLM to MCP tools.
+8. To manage knowledge or harness rules, configure an MCP-capable client to run `npm run mcp:rag-manager` with `cwd` pointing at this local clone. Knowledge and harness writes happen through that MCP server only, with user approval for write/destructive actions.
 
 ## Overview
 
@@ -131,7 +132,7 @@ npm run dev
 
 Open `http://localhost:3000`. If `DATABASE_URL` is missing, the app first shows database setup instructions; if it is present but unreachable, the app shows a database connection error. After the database is configured, the template enables the web testing surface locally with `ENABLE_TESTING_SURFACE=true`; if that flag is missing or false, the app shows instructions for turning it on and blocks the testing API routes. Keep it unset or `false` for Vercel/public deployments unless you intentionally enable it and configure `APP_API_KEY`. Make sure [Ollama](https://ollama.com) is running locally with the model from your `.env` pulled (default `qwen2.5:7b-instruct`).
 
-To let an assistant manage the knowledge base, connect the MCP server — see [docs/mcp-server.md](docs/mcp-server.md).
+Opening the browser is enough to test the approved RAG, but it is not enough to manage knowledge. The browser UI is not an MCP client and should remain read-only. To let an assistant create, organize, approve, archive, or otherwise manage knowledge/harness rules, connect an MCP-capable client to the MCP server — see [docs/mcp-server.md](docs/mcp-server.md).
 
 ## LLM provider
 

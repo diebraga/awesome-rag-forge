@@ -2,6 +2,8 @@
 
 The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the **only** supported write path into the database. The Next.js chat app is a read-only viewer — it never writes knowledge, only reads `APPROVED` chunks — and every creation, edit, approval, rejection, or archival action must go through this server's tools. See [System Architecture](architecture.md) for the full read/write boundary.
 
+Opening the Next.js app in a browser does not connect this MCP server. The browser UI can test approved knowledge, browse approved collections/harness state, submit narrow answer feedback, and use local setup helpers, but it must not be treated as an MCP client. To create or manage RAG/harness data, connect an MCP-capable assistant to this server over stdio from the local clone.
+
 ## Running it locally
 
 ```bash
@@ -141,9 +143,17 @@ Harness rules (`HarnessRule`) describe what the read-only chat can and cannot do
 
 This means even a fully compromised or adversarial MCP client cannot grant the chat a capability it doesn't have: the blocklist is enforced in code at both the propose and write steps, independent of what the calling model claims or intends.
 
-## Connecting to Claude Desktop or Codex
+## Connecting to Claude Code, Claude Desktop, or Codex
 
-Add an entry pointing at this repo's checkout, for example (Claude Desktop `claude_desktop_config.json`):
+**Claude Code (recommended — scriptable, easiest for an AI assistant to run unattended):** from inside your local clone, run
+
+```bash
+claude mcp add rag-manager -- npm run mcp:rag-manager
+```
+
+This registers the server scoped to the exact current directory (`claude mcp get rag-manager` / `claude mcp list` to verify; `claude mcp remove rag-manager` to undo). **If you ever rename or move the project folder, this registration becomes orphaned** — it's keyed to the old path and won't resolve, even though nothing looks wrong in the repo itself. Re-run the command above from the new location to fix it; there's no way to "repair" the old entry in place.
+
+**Claude Desktop** (no CLI equivalent — edit its config directly): add an entry pointing at this repo's checkout to `claude_desktop_config.json`:
 
 ```json
 {
@@ -158,6 +168,8 @@ Add an entry pointing at this repo's checkout, for example (Claude Desktop `clau
 ```
 
 `cwd` **must** point at your local clone — the MCP server is not hosted anywhere. See [Deployment](deployment.md) for why the deployed app and the MCP server are separate things.
+
+Either way, the server only connects to whichever client launched it *at that client's next session start* — an already-running session won't pick up a registration added mid-conversation.
 
 ## Example prompts
 
