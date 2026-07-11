@@ -27,8 +27,16 @@ If a user drops this repository into an AI coding assistant and asks to set it u
 5. If chat is requested and Ollama is missing, stopped, or missing the configured model, explain the issue and ask permission to install/start/pull as needed. The default model is `qwen2.5:7b-instruct` unless `.env` says otherwise.
 6. Optional bucket credentials are only needed to preserve original uploaded files for later download. If the user does not have them, continue with text/OCR ingestion; do not block setup.
 7. Treat the browser UI as a read-only testing surface, not an MCP client. Opening the browser lets the user test approved knowledge; it does not connect the LLM to MCP tools.
-8. To manage knowledge or harness rules, configure an MCP-capable client to run `npm run mcp:rag-manager` with `cwd` pointing at this local clone. Knowledge and harness writes happen through that MCP server only, with user approval for write/destructive actions.
+8. To manage knowledge or harness rules, configure an MCP-capable client to run `npm run mcp:rag-manager` with `cwd` pointing at this local clone. Knowledge and harness writes happen through that MCP server only, with user approval for write/destructive actions. For Claude Code, register it directly from the repo root:
+
+   ```bash
+   claude mcp add rag-manager -- npm run mcp:rag-manager
+   ```
+
+   For other clients (Claude Desktop, Codex CLI), see [MCP Server](docs/mcp-server.md#connecting-to-claude-desktop-or-codex) for the equivalent config.
 9. Finish setup with the user-facing handoff in [Post-Install Handoff](docs/post-install-handoff.md).
+
+> **⚠️ After registering the MCP server, restart your session.** Registration does not make the tools available in the conversation that ran the registration command — the `rag-manager` tools only appear in a **new** session of the MCP client. This is the single most common point of confusion: "registered successfully" is not the same as "tools available right now."
 
 ## Overview
 
