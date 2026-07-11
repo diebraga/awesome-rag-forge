@@ -125,6 +125,8 @@ To let an assistant manage the knowledge base, connect the MCP server — see [d
 
 The chat's reply-generating backend is swappable, not hardcoded — `app/api/chat/route.ts` only ever talks to a `ChatProvider` interface (`lib/chat-providers/types.ts`), never to a specific model API directly. **Ollama is the default and the only provider implemented today**: it requires no API key, the app auto-detects whether it's running, offers to start it for you locally, and tells you clearly if it's missing rather than failing silently (see `docs/development-workflow.md`).
 
+The HTTP surface is intentionally split: chat/context/collections/document-download/harness routes are read-only testing and integration surfaces over approved data, while `/api/ollama/*` is local setup support for the default provider. Knowledge and harness management still never happen over these routes; they remain MCP-only.
+
 To point the chat at a different backend later, implement `ChatProvider` for it and register it in `lib/chat-providers/index.ts`; select it with the `CHAT_PROVIDER` env var (defaults to `"ollama"`). Provider credentials (a future `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) belong in `.env`, the same as `STORAGE_*` — never entered through the UI or stored in the database. No second provider exists yet; the interface exists so adding one is additive, not a rewrite of the chat route.
 
 ## API docs

@@ -96,7 +96,7 @@ The spec still only describes API shape — paths, request/response schemas, and
 
 ### OpenAPI surface boundary
 
-Only document the testing/client HTTP surface in Swagger: chat, feedback capture, approved read-only context/collections/harness display, document downloads, and local Ollama helper routes. Do not add MCP-only workflows to OpenAPI: knowledge creation/update/archive, harness proposal/review, feedback review/resolution, eval creation, or anything that exposes drafts/rejected records/all statuses.
+Only document the testing/client HTTP surface in Swagger: chat, feedback capture, approved read-only context/collections/harness display, document downloads, and local Ollama setup helper routes. Keep `/api/rag/harness` documented because the testing UI reads the approved assistant identity/capabilities/restrictions from it. Keep `/api/ollama/*` documented because local users need setup controls, but describe them as local testing helpers, not production client integrations. Do not add MCP-only workflows to OpenAPI: knowledge creation/update/archive, harness proposal/review, feedback review/resolution, eval creation, or anything that exposes drafts/rejected records/all statuses.
 
 ## `POST /api/ollama/start` executes a process — scoped deliberately
 

@@ -24,7 +24,7 @@ const spec = swaggerJsdoc({
       title: `${PROJECT_NAME} API`,
       version: "0.1.0",
       description:
-        "Read-only RAG chat/knowledge-base API, plus one narrow write endpoint (POST /api/feedback) that can only ever create a RagFeedback row. All knowledge writes happen exclusively through the MCP server (mcp/rag-manager), which this API cannot reach — see docs/architecture.md. Generate a client in any language from this spec with https://openapi-generator.tech.",
+        "Testing/client HTTP surface for approved RAG chat, approved context/collections/document download, approved harness display, local Ollama setup helpers, and one narrow feedback write (POST /api/feedback can only create a RagFeedback row). Knowledge and harness management writes are MCP-only: this API cannot create, edit, approve, reject, archive, or delete RAG knowledge or harness rules — see docs/architecture.md. Generate a client in any language from this spec with https://openapi-generator.tech.",
     },
     servers: [{ url: "/", description: "Same origin as this deployment" }],
     components: {
