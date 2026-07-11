@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { testingFetch } from "@/lib/testing-api-client";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { getTypewriterStep, getTypewriterText } from "./typewriter";
 
 type ChatSource = {
   documentId: string;
@@ -21,6 +22,7 @@ type ChatMessage = {
   sources?: ChatSource[];
   question?: string;
   isGreeting?: boolean;
+  animate?: boolean;
 };
 
 type FeedbackRating = "GOOD" | "BAD";
@@ -104,6 +106,7 @@ export default function Home() {
 
   const [feedbackByMessage, setFeedbackByMessage] = useState<Record<number, FeedbackRating>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  const [visibleMessageChars, setVisibleMessageChars] = useState<Record<number, number>>({});
 
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? null;
   const selectedProviderModels = selectedProvider?.id === "ollama" ? availableModels : selectedProvider?.models ?? [];
@@ -116,6 +119,24 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    const activeMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "bot" && message.animate && (visibleMessageChars[message.id] ?? 0) < message.text.length);
+
+    if (!activeMessage) return;
+
+    const timer = window.setTimeout(() => {
+      setVisibleMessageChars((current) => ({
+        ...current,
+        [activeMessage.id]: Math.min(activeMessage.text.length, (current[activeMessage.id] ?? 0) + getTypewriterStep(activeMessage.text.length)),
+      }));
+    }, 18);
+
+    return () => window.clearTimeout(timer);
+  }, [messages, visibleMessageChars]);
+
 
   async function refreshAssistantName() {
     try {
@@ -358,6 +379,7 @@ export default function Home() {
           text: data.reply ?? data.error ?? "The selected model did not return a response.",
           sources: data.reply ? data.sources : undefined,
           question: data.reply ? question : undefined,
+          animate: true,
         },
       ]);
 
@@ -369,6 +391,7 @@ export default function Home() {
           id: Date.now() + 1,
           role: "bot",
           text: error instanceof Error ? error.message : "Unable to reach the selected model.",
+          animate: true,
         },
       ]);
       if (selectedProvider.id === "ollama") checkOllamaStatus();
@@ -542,44 +565,51 @@ export default function Home() {
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-4 py-1 pr-2">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex items-end gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                {message.role === "bot" && <PersonAvatar />}
-                <div className={message.role === "user" ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground" : "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"}>
-                  {message.text}
-                  {message.sources && message.sources.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2 whitespace-normal">
-                      {message.sources.map((source) => (
-                        <span key={source.documentId} className="inline-flex items-center gap-1">
-                          {source.downloadable && (
-                            <button type="button" onClick={() => downloadSource(source)} className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50">
-                              <Download className="size-3" />{source.title}
+            {messages.map((message) => {
+              const visibleCharacters = message.animate ? (visibleMessageChars[message.id] ?? 0) : message.text.length;
+              const displayedText = message.role === "bot" ? getTypewriterText(message.text, visibleCharacters) : message.text;
+              const isTyping = Boolean(message.animate && visibleCharacters < message.text.length);
+
+              return (
+                <div key={message.id} className={`flex items-end gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                  {message.role === "bot" && <PersonAvatar />}
+                  <div className={message.role === "user" ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground" : "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"}>
+                    {displayedText}
+                    {isTyping && <span className="ml-0.5 inline-block h-4 w-1 translate-y-0.5 animate-pulse rounded-full bg-current" aria-hidden="true" />}
+                    {!isTyping && message.sources && message.sources.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2 whitespace-normal">
+                        {message.sources.map((source) => (
+                          <span key={source.documentId} className="inline-flex items-center gap-1">
+                            {source.downloadable && (
+                              <button type="button" onClick={() => downloadSource(source)} className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50">
+                                <Download className="size-3" />{source.title}
+                              </button>
+                            )}
+                            <button type="button" onClick={() => requestDifferentExplanation(source)} aria-label={`Explain ${source.title} a different way`} title="Explain this differently" className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-black/60 hover:bg-black/5 hover:text-black">
+                              <MessageCircleQuestion className="size-3" />{!source.downloadable && source.title}
                             </button>
-                          )}
-                          <button type="button" onClick={() => requestDifferentExplanation(source)} aria-label={`Explain ${source.title} a different way`} title="Explain this differently" className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-black/60 hover:bg-black/5 hover:text-black">
-                            <MessageCircleQuestion className="size-3" />{!source.downloadable && source.title}
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {message.role === "bot" && !message.isGreeting && (
-                    <div className="mt-2 flex items-center gap-1 whitespace-normal">
-                      <button type="button" onClick={() => copyMessageText(message)} aria-label="Copy message" className="inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70">
-                        {copiedMessageId === message.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                      </button>
-                      <button type="button" onClick={() => submitFeedback(message, "GOOD")} aria-label="Good response" className={feedbackByMessage[message.id] === "GOOD" ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600" : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"}>
-                        <ThumbsUp className="size-3.5" />
-                      </button>
-                      <button type="button" onClick={() => submitFeedback(message, "BAD")} aria-label="Bad response" className={feedbackByMessage[message.id] === "BAD" ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600" : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"}>
-                        <ThumbsDown className="size-3.5" />
-                      </button>
-                    </div>
-                  )}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {message.role === "bot" && !message.isGreeting && !isTyping && (
+                      <div className="mt-2 flex items-center gap-1 whitespace-normal">
+                        <button type="button" onClick={() => copyMessageText(message)} aria-label="Copy message" className="inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70">
+                          {copiedMessageId === message.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                        </button>
+                        <button type="button" onClick={() => submitFeedback(message, "GOOD")} aria-label="Good response" className={feedbackByMessage[message.id] === "GOOD" ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600" : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"}>
+                          <ThumbsUp className="size-3.5" />
+                        </button>
+                        <button type="button" onClick={() => submitFeedback(message, "BAD")} aria-label="Bad response" className={feedbackByMessage[message.id] === "BAD" ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600" : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"}>
+                          <ThumbsDown className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {message.role === "user" && <PersonAvatar />}
                 </div>
-                {message.role === "user" && <PersonAvatar />}
-              </div>
-            ))}
+              );
+            })}
             {isLoading && (
               <div className="flex items-end gap-3">
                 <PersonAvatar />

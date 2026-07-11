@@ -14,5 +14,7 @@ describe("buildSourceProposal", () => {
 
     expect(proposal.chunkPlan[0]?.retrievalAliases).toContain("company");
     expect(proposal.chunkPlan[0]?.retrievalAliases).toContain("tell me about the company");
+    expect(proposal.placementReview.recommendation).toBe("CREATE_NEW_DOCUMENT");
+    expect(proposal.placementReview.summary).toMatch(/new document/i);
   });
 });

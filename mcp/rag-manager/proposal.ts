@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RagSourceType } from "../../generated/prisma/enums";
 import { chunkSourceText, chunkPdfPages, type ExtractedPageInput } from "./chunking";
 import { buildRetrievalAliases } from "./retrieval-enrichment";
+import { buildPlacementReview, type PlacementCandidateInput } from "./placement-intelligence";
 import { prisma } from "./prisma";
 
 export const sourceTypeSchema = z.enum([
@@ -65,6 +66,21 @@ export const proposalSchema = z.object({
     citationText: z.string().optional(),
     sourceUrl: z.string().optional(),
   }),
+  placementReview: z.object({
+    recommendation: z.enum(["CREATE_NEW_DOCUMENT", "CREATE_RELATED_DOCUMENT", "UPDATE_EXISTING_DOCUMENT", "DUPLICATE_SKIP"]),
+    confidence: z.number().min(0).max(1),
+    summary: z.string(),
+    reasons: z.array(z.string()),
+    candidates: z.array(
+      z.object({
+        documentId: z.string(),
+        title: z.string(),
+        score: z.number(),
+        overlapRatio: z.number(),
+        matchingSignals: z.array(z.string()),
+      }),
+    ),
+  }),
   reviewStatus: z.literal("PENDING_REVIEW"),
   warnings: z.array(z.string()),
 });
@@ -87,6 +103,57 @@ function defaultCollectionName(category?: string, domain?: string) {
   if (domain) return `${domain} knowledge`;
   return "General knowledge";
 }
+
+async function findPlacementCandidates(input: {
+  collectionId?: string;
+  category?: string;
+  domain?: string;
+  tags?: string[];
+}): Promise<PlacementCandidateInput[]> {
+  const candidateFilters = [
+    input.collectionId ? { collectionId: input.collectionId } : undefined,
+    input.domain ? { domain: input.domain } : undefined,
+    input.category ? { category: input.category } : undefined,
+    ...(input.tags ?? []).map((tag) => ({ tags: { has: tag } })),
+  ].filter((clause): clause is { collectionId: string } | { domain: string } | { category: string } | { tags: { has: string } } => Boolean(clause));
+
+  try {
+    const documents = await prisma.ragDocument.findMany({
+      where: {
+        status: { in: ["PENDING_REVIEW", "APPROVED"] },
+        ...(candidateFilters.length > 0 ? { OR: candidateFilters } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        domain: true,
+        tags: true,
+        metadata: true,
+        chunks: {
+          where: { status: { in: ["PENDING_REVIEW", "APPROVED"] } },
+          select: { chunkText: true },
+          take: 8,
+        },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 25,
+    });
+
+    return documents.map((document) => ({
+      id: document.id,
+      title: document.title,
+      category: document.category,
+      domain: document.domain,
+      tags: document.tags,
+      metadata: document.metadata,
+      chunkTexts: document.chunks.map((chunk) => chunk.chunkText),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 
 export async function buildSourceProposal(input: {
   title?: string;
@@ -115,6 +182,21 @@ export async function buildSourceProposal(input: {
   if (rawChunks.length === 1 && input.sourceText.length > 1800) {
     warnings.push("The source did not split cleanly into paragraphs. Review chunk quality before approval.");
   }
+
+  const placementCandidates = await findPlacementCandidates({
+    collectionId: input.collectionId,
+    category: input.category,
+    domain: input.domain,
+    tags: input.tags,
+  });
+  const placementReview = buildPlacementReview({
+    title,
+    sourceText: input.sourceText,
+    category: input.category,
+    domain: input.domain,
+    tags: input.tags,
+    candidates: placementCandidates,
+  });
 
   const proposedCollection = collection
     ? {
@@ -162,6 +244,7 @@ export async function buildSourceProposal(input: {
       citationText: input.sourceUrl ? `${title} (${input.sourceUrl})` : title,
       sourceUrl: input.sourceUrl,
     },
+    placementReview,
     reviewStatus: "PENDING_REVIEW" as const,
     warnings,
   } satisfies SourceProposal;
@@ -188,6 +271,7 @@ export async function buildFileProposal(input: {
     : null;
 
   const title = input.title?.trim() || input.fileName.replace(/\.pdf$/i, "").trim() || "Untitled document";
+  const sourceText = input.pages.map((page) => page.text).join("\n\n");
   const rawChunks = chunkPdfPages(input.pages);
   const warnings: string[] = [];
 
@@ -202,6 +286,21 @@ export async function buildFileProposal(input: {
       `${input.ocrPageCount} of ${input.pages.length} page(s) had no text layer and were processed with OCR — verify accuracy before approving.`,
     );
   }
+
+  const placementCandidates = await findPlacementCandidates({
+    collectionId: input.collectionId,
+    category: input.category,
+    domain: input.domain,
+    tags: input.tags,
+  });
+  const placementReview = buildPlacementReview({
+    title,
+    sourceText,
+    category: input.category,
+    domain: input.domain,
+    tags: input.tags,
+    candidates: placementCandidates,
+  });
 
   const proposedCollection = collection
     ? {
@@ -247,6 +346,7 @@ export async function buildFileProposal(input: {
       label: title,
       citationText: title,
     },
+    placementReview,
     reviewStatus: "PENDING_REVIEW" as const,
     warnings,
   } satisfies SourceProposal;

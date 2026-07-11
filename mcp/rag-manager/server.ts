@@ -25,6 +25,7 @@ import {
 } from "../../lib/storage";
 import { buildHarnessProposal } from "../../lib/rag/harness";
 import { withRetrievalAliases } from "./retrieval-enrichment";
+import { withContentFingerprint } from "./placement-intelligence";
 import { embedChunkForApproval, storeChunkEmbedding } from "./chunk-embeddings";
 
 // Whole-file base64 round-trips through the calling model's context twice
@@ -167,12 +168,16 @@ async function persistFileUpload(input: {
         tags: proposal.proposedDocument.tags,
         status: "PENDING_REVIEW",
         storageKey,
-        metadata: {
-          insertedBy: "rag-manager-mcp",
-          originalFileName: fileName,
-          fileStored: willStoreFile,
-          warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
-        },
+        metadata: withContentFingerprint(
+          {
+            insertedBy: "rag-manager-mcp",
+            originalFileName: fileName,
+            fileStored: willStoreFile,
+            warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
+            placementReview: proposal.placementReview,
+          },
+          proposal.chunkPlan.map((chunk) => chunk.chunkText).join("\n\n"),
+        ),
       },
     });
 
@@ -187,7 +192,7 @@ async function persistFileUpload(input: {
           tokenCount: chunk.tokenCount,
           pageNumber: chunk.pageNumber,
           status: "PENDING_REVIEW",
-          metadata: withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases),
+          metadata: withContentFingerprint(withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases), chunk.chunkText),
         },
       });
 
@@ -517,7 +522,7 @@ server.registerTool(
   "propose_source_insert",
   {
     title: "Propose source insert",
-    description: "Analyze source text and propose where/how to store it. This tool does not write to the database.",
+    description: "Analyze source text and propose where/how to store it, including duplicate/update/related-document placement review. This tool does not write to the database.",
     inputSchema: {
       title: z.string().optional(),
       sourceText: z.string().min(1),
@@ -579,10 +584,14 @@ server.registerTool(
           domain: proposal.proposedDocument.domain,
           tags: proposal.proposedDocument.tags,
           status: "PENDING_REVIEW",
-          metadata: {
-            insertedBy: "rag-manager-mcp",
-            warnings: proposal.warnings,
-          },
+          metadata: withContentFingerprint(
+            {
+              insertedBy: "rag-manager-mcp",
+              warnings: proposal.warnings,
+              placementReview: proposal.placementReview,
+            },
+            proposal.chunkPlan.map((chunk) => chunk.chunkText).join("\n\n"),
+          ),
         },
       });
 
@@ -597,7 +606,7 @@ server.registerTool(
             tokenCount: chunk.tokenCount,
             pageNumber: chunk.pageNumber,
             status: "PENDING_REVIEW",
-            metadata: withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases),
+            metadata: withContentFingerprint(withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases), chunk.chunkText),
           },
         });
 
@@ -631,7 +640,7 @@ server.registerTool(
   {
     title: "Propose file upload",
     description:
-      "Analyze an uploaded PDF file (base64-encoded) — extract its text with OCR fallback for scanned/image-only pages — and propose a document/chunk plan. This tool does not write to the database and does not upload anything to storage. Before calling approve_file_upload, the calling assistant must ask the user to choose: (a) extract text only (nothing is stored in the bucket, no storage configuration needed), or (b) also store the original file for later download. Do not assume — always ask, every time a file is uploaded.",
+      "Analyze an uploaded PDF file (base64-encoded) — extract its text with OCR fallback for scanned/image-only pages — and propose a document/chunk plan, including duplicate/update/related-document placement review. This tool does not write to the database and does not upload anything to storage. Before calling approve_file_upload, the calling assistant must ask the user to choose: (a) extract text only (nothing is stored in the bucket, no storage configuration needed), or (b) also store the original file for later download. Do not assume — always ask, every time a file is uploaded.",
     inputSchema: {
       fileName: z.string().min(1),
       fileBase64: z.string().min(1),

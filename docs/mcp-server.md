@@ -39,13 +39,13 @@ The MCP server is allowed to create and manage the RAG knowledge base and harnes
 | `create_collection` | Yes (if approved) | Create a new collection, but only when `userApproval: true`. |
 | `list_documents` | No | List documents, optionally filtered. |
 | `search_knowledge_base` | No | Direct MCP text search over chunks. Chat uses the separate read-only hybrid semantic/lexical retriever. |
-| `propose_source_insert` | **No** | Analyze source text and propose collection/document/chunk plan. |
+| `propose_source_insert` | **No** | Analyze source text and propose collection/document/chunk plan, including duplicate/update/related-document placement review. |
 | `approve_source_insert` | Yes (if approved) | Persist a proposal, but only when `userApproval: true`. |
 | `attach_document_file` | Yes (if storage configured and approved) | Record a `storageKey` for an original file; refuses if storage env vars are missing or `userApproval` isn't `true`. |
 | `archive_document` | Yes (if approved) | Archive a document and its chunks (`status: ARCHIVED`), optionally deleting its stored file, only when `userApproval: true`. Never hard-deletes rows. |
 | `propose_chunk_update` | **No** | Show a before/after diff for a correction to an existing chunk's text. Does not write. |
 | `approve_chunk_update` | Yes (if approved) | Persist the correction, only when `userApproval: true`. Resets the chunk to `PENDING_REVIEW` if it was `APPROVED`. |
-| `propose_file_upload` | **No** | Extract text from an uploaded PDF (OCR fallback for scanned pages) and propose a document/chunk plan. Does not upload anything to storage. |
+| `propose_file_upload` | **No** | Extract text from an uploaded PDF (OCR fallback for scanned pages) and propose a document/chunk plan, including duplicate/update/related-document placement review. Does not upload anything to storage. |
 | `approve_file_upload` | Yes (if approved) | Persist the proposal's document/chunks as `PENDING_REVIEW`, only when `userApproval: true`. Uploads the original file only when `storeOriginalFile: true` and storage is configured; otherwise falls back to text-only storage and says so clearly. |
 | `propose_file_upload_batch` | **No** | Analyze multiple PDFs, extract/OCR/sanitize text, and propose one document per file with organization rationale. Does not write or upload. |
 | `approve_file_upload_batch` | Yes (if approved) | Persist multiple proposed PDF uploads as `PENDING_REVIEW`, one document per file, only when `userApproval: true`; reuses matching batch collections and applies each file's storage choice. |
@@ -78,6 +78,7 @@ A proposal includes:
 - category / domain / tags
 - the chunking plan
 - source/citation metadata
+- a `placementReview` recommendation (`CREATE_NEW_DOCUMENT`, `CREATE_RELATED_DOCUMENT`, `UPDATE_EXISTING_DOCUMENT`, or `DUPLICATE_SKIP`) with confidence, reasons, and likely existing-document candidates
 - an explicit list of warnings (e.g. "no category or domain was provided")
 
 ## Document attachments require storage configuration and approval

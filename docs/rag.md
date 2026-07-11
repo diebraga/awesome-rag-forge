@@ -4,7 +4,7 @@
 
 The chat uses hybrid retrieval over `APPROVED` chunks belonging to `APPROVED` documents. The latest user question is passed into `lib/rag/retrieval.ts`, which runs semantic pgvector search when chunk embeddings are available, merges those candidates with lexical candidates, then ranks the union before building the prompt.
 
-MCP proposals enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This is still behind the existing propose -> approve review path: aliases are proposal data and embeddings are written only when a chunk is approved through MCP.
+MCP proposals first run a placement review against nearby existing documents, then enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This is still behind the existing propose -> approve review path: placement recommendations and aliases are proposal data, saved content receives fingerprints for future duplicate detection, and embeddings are written only when a chunk is approved through MCP.
 
 Retrieval normalizes punctuation and spacing before scoring, so compact user phrasing such as `COEse` can match spaced stored knowledge such as `COES eindex`. Semantic search handles broader phrasing such as `tell me about the company` when the relevant chunk has an embedding. If no semantic or lexical candidates match, retrieval returns no context; the chat then follows the no-context branch and must not invent citations.
 
