@@ -1,15 +1,89 @@
 # awesome-rag-forge
 
-A generic RAG (retrieval-augmented generation) knowledge base builder, managed by talking to an AI assistant through an MCP server — not through a manual admin panel.
+![Awesome RAG Forge network diagram](public/images/awesome-rag-forge-network.webp)
 
-- **Chat app**: Next.js UI, **read-only**. It answers questions using approved RAG context so you can test retrieval and see what the knowledge base contains. It cannot create, edit, approve, reject, archive, or delete anything.
-- **Knowledge management**: an MCP server (`mcp/rag-manager`), the **only** component that manages the knowledge base. An MCP-connected assistant inspects, proposes, and — only after your approval — writes to the knowledge base through it. Any MCP client can connect (Claude, Cursor, Windsurf, Copilot, Cline, Gemini CLI — see [Documentation](#documentation) below), not just one specific tool.
-- **LLM backend**: swappable via a `ChatProvider` interface (`lib/chat-providers/`). Defaults to [Ollama](https://ollama.com), local and free, with automatic status detection and a "Connect to Ollama" fallback in the UI. See [LLM provider](#llm-provider) below.
-- **Database**: Prisma + Postgres with `pgvector`. The project is domain-agnostic, but not database-engine-agnostic yet; MongoDB/SQLite/MySQL would require code and schema changes.
+A local-first RAG knowledge-base builder managed through an MCP server, with a read-only testing UI and approval-gated knowledge operations.
 
-New knowledge always starts as `PENDING_REVIEW`. Nothing reaches the live chat until a human approves it through the MCP server.
+![Next.js](https://img.shields.io/badge/Next.js-16.2.4-black)
+![React](https://img.shields.io/badge/React-19.2.4-149eca)
+![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A520.9-339933)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
+![Prisma](https://img.shields.io/badge/Prisma-7.8.0-2d3748)
+![Postgres](https://img.shields.io/badge/Postgres-pgvector-4169e1)
+![MCP](https://img.shields.io/badge/MCP-local%20server-6f42c1)
+![Vitest](https://img.shields.io/badge/tests-Vitest-6e9f18)
+![License](https://img.shields.io/badge/license-not%20set-lightgrey)
 
-> **If an AI assistant is reading this to set the project up** (someone pasted this repo's link into a chat): ask the user to choose between providing an existing `DATABASE_URL` or creating a local Postgres database. The database must be Postgres with the `pgvector` extension available. Check the Prerequisites table before running anything: verify Node's version, whether the target Postgres database has `pgvector`, and whether Ollama/an MCP client are present — don't assume. Tell the user plainly what's missing and why, and offer to install what's safely automatable (`npm install`, local Docker Postgres after permission, `CREATE EXTENSION IF NOT EXISTS vector;` if the database is reachable, `ollama pull <model>` if Ollama is already running). Ask about optional bucket storage after the database: without bucket keys, PDF uploads still extract/OCR and save cleaned text; with S3-compatible bucket keys, original PDFs can also be stored for later download. If the user is intentionally exposing the web testing surface online, ask them to set `APP_API_KEY`; do not ask for an MCP API key for the default local stdio MCP server. Never install system-level software (Node, Docker Desktop, native Postgres, Ollama, an MCP client) without asking first, and never invent, guess, or auto-fill secrets (`DATABASE_URL`, storage credentials) — those always require the user to obtain them from a real provider themselves. Once you're working from a local clone, [CLAUDE.md](CLAUDE.md) carries the fuller, repo-specific version of this same instruction — load it next.
+## Overview
+
+awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. A user connects an MCP-capable assistant, asks it to create or improve the knowledge base, reviews the proposed changes, and only approved knowledge becomes visible to the chat/testing surface.
+
+The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. It is meant for builders who want local-first RAG management, human approval, portable API/client documentation, and a clear separation between “using the knowledge base” and “changing the knowledge base.”
+
+Current status: early local-first project. The MCP server can manage RAG knowledge, harness rules, feedback review, PDF ingestion, and eval creation workflows. The Next.js UI is a testing surface, not a production admin dashboard.
+
+## Key Features
+
+- **MCP-managed knowledge base**: create, review, approve, archive, and inspect RAG knowledge through MCP tools.
+- **Read-only testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready.
+- **Human approval boundary**: knowledge and harness changes go through proposal/review flows before affecting the chat.
+- **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
+- **PDF ingestion**: MCP upload tools extract selectable text, fall back to OCR, clean text for LLM use, and optionally store original files in S3-compatible storage.
+- **Generated OpenAPI docs**: Swagger/OpenAPI is generated from route annotations and gated behind the same local testing readiness checks.
+- **Local Postgres path**: optional Docker Compose setup for Postgres + `pgvector` when the user does not already have a database URL.
+
+## Architecture at a Glance
+
+Think of the project as two connected surfaces sharing one database:
+
+- The **Next.js app** is the showroom: it reads approved knowledge and lets users test what the assistant would answer.
+- The **MCP server** is the workshop: it can propose and perform knowledge/harness changes, but only through approval-gated tools.
+
+```mermaid
+flowchart LR
+  User[User / tester] --> UI[Next.js testing UI]
+  UI --> API[Read-only API routes]
+  API --> Context[lib/rag chat context]
+  Context --> DB[(Postgres + pgvector)]
+  API --> Model[Chat provider / Ollama]
+
+  Operator[User + MCP assistant] --> MCP[MCP rag-manager]
+  MCP --> Review[Proposal and approval workflow]
+  Review --> DB
+
+  DB --> UI
+```
+
+The important boundary: HTTP routes can read approved state and record narrow answer feedback. MCP tools are the only path for creating, approving, archiving, or resolving operational knowledge workflows.
+
+## Technology Stack
+
+| Layer | Technology |
+| --- | --- |
+| Web app | Next.js 16, React 19, TypeScript, Tailwind CSS |
+| API | Next.js App Router route handlers |
+| Knowledge management | MCP server in `mcp/rag-manager` |
+| Database | Postgres with `pgvector` |
+| ORM | Prisma 7 with `@prisma/adapter-pg` |
+| Local model default | Ollama |
+| File storage | Optional S3-compatible bucket via AWS SDK |
+| PDF/OCR | `pdf-parse`, `tesseract.js` |
+| API docs | Swagger JSDoc -> generated OpenAPI JSON -> Swagger UI |
+| Tests | Vitest, ESLint, Prisma validation |
+
+## Repository Structure
+
+| Path | Purpose |
+| --- | --- |
+| `app/` | Next.js pages and API routes for the read-only testing surface. |
+| `app/api-docs/` | Gated Swagger UI and generated OpenAPI artifact. |
+| `components/` | Shared UI components. |
+| `lib/rag/` | Retrieval, chat context, harness validation, and collection read logic. |
+| `lib/chat-providers/` | Swappable chat backend interface; Ollama is the implemented default. |
+| `mcp/rag-manager/` | MCP tools for knowledge, harness, feedback, file upload, and eval workflows. |
+| `prisma/` | Prisma schema and seed data. |
+| `docs/` | Official project documentation. |
+| `scripts/` | Build/setup helpers, including OpenAPI generation and local Postgres init. |
 
 ## Prerequisites
 
