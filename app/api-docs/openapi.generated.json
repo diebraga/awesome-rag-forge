@@ -395,6 +395,52 @@
         }
       }
     },
+    "/api/ollama/install": {
+      "post": {
+        "summary": "Attempt to install Ollama on this machine",
+        "description": "Local-only, non-production helper. Uses a supported local package manager when available and never targets a remote machine.",
+        "tags": [
+          "Ollama"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ollama installed or already available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Auto-install not available in this environment"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "500": {
+            "description": "Installation failed or manual installation required"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      }
+    },
     "/api/feedback": {
       "post": {
         "summary": "Record a thumbs up/down reaction to an answer",
@@ -513,9 +559,19 @@
                       }
                     }
                   },
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "ollama",
+                      "openai",
+                      "anthropic",
+                      "gemini"
+                    ],
+                    "description": "Optional provider id. Defaults to CHAT_PROVIDER, then Ollama."
+                  },
                   "model": {
                     "type": "string",
-                    "description": "Must be one of the active provider's known models; unrecognized values fall back to the default."
+                    "description": "Must be one of the selected provider's known models; unrecognized values fall back to the default."
                   }
                 }
               }
@@ -573,6 +629,154 @@
           },
           "503": {
             "description": "Database unreachable, or model backend unreachable"
+          }
+        }
+      }
+    },
+    "/api/chat/providers": {
+      "get": {
+        "summary": "List available testing chat providers",
+        "description": "Read-only provider catalog for the testing UI. Reports whether each hosted provider is configured from server-side env vars; never returns API keys.",
+        "tags": [
+          "Chat"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "ollama",
+                              "openai",
+                              "anthropic",
+                              "gemini"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "shortLabel": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "configured": {
+                            "type": "boolean"
+                          },
+                          "defaultModel": {
+                            "type": "string"
+                          },
+                          "models": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "envVar": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
+          }
+        }
+      },
+      "post": {
+        "summary": "Get a copyable hosted-provider setup prompt",
+        "description": "Returns setup instructions for the selected provider. Never accepts or stores provider API keys; keys belong in .env.",
+        "tags": [
+          "Chat"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "provider"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "anthropic",
+                      "gemini"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Setup prompt returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "prompt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown provider or invalid body"
+          },
+          "401": {
+            "description": "Missing/invalid API key (only when APP_API_KEY is configured)"
+          },
+          "404": {
+            "description": "Testing surface disabled"
+          },
+          "503": {
+            "description": "Database unreachable"
           }
         }
       }

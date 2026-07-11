@@ -10,6 +10,7 @@ type ChatRequest = {
     text: string;
   }>;
   model?: string;
+  provider?: string;
 };
 
 /**
@@ -34,9 +35,13 @@ type ChatRequest = {
  *                   properties:
  *                     role: { type: string, enum: [bot, user] }
  *                     text: { type: string }
+ *               provider:
+ *                 type: string
+ *                 enum: [ollama, openai, anthropic, gemini]
+ *                 description: Optional provider id. Defaults to CHAT_PROVIDER, then Ollama.
  *               model:
  *                 type: string
- *                 description: Must be one of the active provider's known models; unrecognized values fall back to the default.
+ *                 description: Must be one of the selected provider's known models; unrecognized values fall back to the default.
  *     responses:
  *       200:
  *         description: Reply generated successfully
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
 
   try {
     const messages = body.messages ?? [];
-    const provider = getChatProvider();
+    const provider = getChatProvider(body.provider);
     // Never trust a client-supplied model name directly — only ever use one
     // from the active provider's own allowlist (see lib/chat-providers).
     const model = body.model && provider.isKnownModel(body.model) ? body.model : provider.defaultModel;

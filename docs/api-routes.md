@@ -27,18 +27,22 @@ Accepts chat history and returns a model reply.
 Request body:
 
 ```json
-{ "messages": [{ "role": "user", "text": "..." }], "model": "llama3.1:8b" }
+{ "messages": [{ "role": "user", "text": "..." }], "provider": "ollama", "model": "llama3.1:8b" }
 ```
 
-`model` is optional and validated against the active `ChatProvider`'s own allowlist (`lib/chat-providers/`; for the default Ollama provider, that's `AVAILABLE_MODELS` in `lib/ollama.ts`) — an unrecognized value silently falls back to the provider's default model, it's never passed through unchecked.
+`provider` is optional and must be one of the registered providers (`ollama`, `openai`, `anthropic`, `gemini`); if omitted, the route falls back to `CHAT_PROVIDER` and then Ollama. `model` is optional and validated against that provider's own allowlist — an unrecognized value silently falls back to the provider's default model, it's never passed through unchecked.
 
 Behavior:
 
 1. Calls `buildAssistantContext()` from [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) to get the assistant's identity/read-only/harness system prompt, knowledge-base scope stats, retrieved RAG context, and structured citations.
-2. Calls `getChatProvider().chat(...)` (`lib/chat-providers/index.ts`) with that system prompt and the requested (or default) model. The route itself is provider-agnostic — it doesn't know or care whether the reply came from Ollama or something else; see [System Architecture](architecture.md) and the README's "LLM provider" section for the abstraction. `CHAT_PROVIDER` (env var, defaults to `ollama`) selects which provider runs.
+2. Calls `getChatProvider(provider).chat(...)` (`lib/chat-providers/index.ts`) with that system prompt and the requested (or default) model. The route itself is provider-agnostic — it does not know or care whether the reply came from Ollama, Claude, Codex/OpenAI, or Gemini; see [System Architecture](architecture.md) and the README's "LLM provider" section for the abstraction.
 3. Returns `{ reply, model, sources }` — `model` here is the assistant's configured **name** (e.g. `"Archivist"`), never the underlying model/provider string, so the real backend is not leaked through the API response either. `sources` is the deduped list of `APPROVED` documents whose chunks were retrieved for this request: `[{ documentId, title, downloadable }]`. `downloadable` is `true` only when the document has a stored original file — the UI uses it to decide whether to render a download link, and it's the only place a `storageKey` value's *existence* is exposed (the key itself never is). See `GET /api/rag/documents/[id]/download` below.
 
 Error handling: each `ChatProvider.chat()` call returns a structured `{ ok: false, status, error }` result instead of throwing for expected failure modes — for the default Ollama provider, that's a `502` with a clear message when the model isn't pulled, and a `503` telling the user to reconnect if Ollama isn't reachable, rather than a raw fetch exception reaching the client. See `app/api/chat/route.ts` and `lib/chat-providers/ollama.ts`.
+
+## `GET /api/chat/providers` and `POST /api/chat/providers`
+
+Read-only setup helpers for the testing UI provider chooser. `GET` returns the provider catalog, configured status, and small allowlisted model list. `POST` accepts `{ "provider": "anthropic" }` and returns a copyable setup prompt for hosted providers that are missing their `.env` key. These routes never accept, store, or echo API keys; keys must be added to `.env` by the local coding assistant or user, then the app is restarted/reloaded.
 
 ## `GET /api/rag`
 
@@ -239,4 +243,4 @@ See `app/api/feedback/route.ts`.
 
 ## No knowledge-base write endpoints
 
-`POST /api/ollama/start` and `POST /api/ollama/pull` are local testing setup helpers for the default Ollama provider: they can start the local model server or pull an allowlisted model when the local-only guard allows it. They never touch Prisma and are not knowledge-management routes. `POST /api/feedback` is the only route in `app/` that writes to the database, and it can only create a `RagFeedback` row — an end-user reaction to an already-approved answer, not a change to what the assistant knows or does. There is intentionally no endpoint that creates, edits, approves, rejects, archives, or deletes RAG knowledge or harness rules over HTTP, and there never should be. The chat app is a retrieval viewer with local model setup helpers plus one narrow feedback-capture exception. All knowledge and harness writes go through the MCP server's approval-gated tools — see [MCP Server](mcp-server.md).
+`POST /api/ollama/install`, `POST /api/ollama/start`, and `POST /api/ollama/pull` are local testing setup helpers for the default Ollama provider: they can install Ollama through a supported local package manager, start the local model server, or pull an allowlisted model when the local-only guard allows it. They never touch Prisma and are not knowledge-management routes. `POST /api/feedback` is the only route in `app/` that writes to the database, and it can only create a `RagFeedback` row — an end-user reaction to an already-approved answer, not a change to what the assistant knows or does. There is intentionally no endpoint that creates, edits, approves, rejects, archives, or deletes RAG knowledge or harness rules over HTTP, and there never should be. The chat app is a retrieval viewer with local model setup helpers plus one narrow feedback-capture exception. All knowledge and harness writes go through the MCP server's approval-gated tools — see [MCP Server](mcp-server.md).

@@ -1,25 +1,27 @@
 import { ollamaProvider } from "./ollama";
+import { anthropicProvider, geminiProvider, openAiProvider } from "./remote";
+import { isProviderId, type ProviderId } from "./catalog";
 import type { ChatProvider } from "./types";
 
 export type { ChatProvider, ProviderChatMessage, ProviderChatResult } from "./types";
+export type { ProviderCatalogItem, ProviderId } from "./catalog";
+export { getProviderCatalog, getProviderSetupPrompt, isProviderConfigured } from "./catalog";
 
-const PROVIDERS: Record<string, ChatProvider> = {
+const PROVIDERS: Record<ProviderId, ChatProvider> = {
   ollama: ollamaProvider,
+  openai: openAiProvider,
+  anthropic: anthropicProvider,
+  gemini: geminiProvider,
 };
 
-const DEFAULT_PROVIDER_ID = "ollama";
+const DEFAULT_PROVIDER_ID: ProviderId = "ollama";
 
-// CHAT_PROVIDER selects which backend answers the chat. Defaults to Ollama
-// (local, no API key needed). Adding a second provider means implementing
-// ChatProvider (see ./types.ts) and registering it here — never touching
-// app/api/chat/route.ts, which only ever talks to this interface.
-export function getChatProvider(): ChatProvider {
-  const id = process.env.CHAT_PROVIDER || DEFAULT_PROVIDER_ID;
-  const provider = PROVIDERS[id];
-  if (!provider) {
-    throw new Error(
-      `Unknown CHAT_PROVIDER "${id}". Available: ${Object.keys(PROVIDERS).join(", ")}.`,
-    );
+// CHAT_PROVIDER is only the server-side default. The testing UI may pass a
+// provider id per request after the user chooses one locally.
+export function getChatProvider(providerId?: string): ChatProvider {
+  const configuredId = providerId || process.env.CHAT_PROVIDER || DEFAULT_PROVIDER_ID;
+  if (!isProviderId(configuredId)) {
+    throw new Error(`Unknown CHAT_PROVIDER "${configuredId}". Available: ${Object.keys(PROVIDERS).join(", ")}.`);
   }
-  return provider;
+  return PROVIDERS[configuredId];
 }

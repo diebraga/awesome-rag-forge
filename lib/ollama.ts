@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { access } from "node:fs/promises";
 
 export const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:7b-instruct";
@@ -48,6 +49,74 @@ export function isLocalOllamaUrl(url: string = OLLAMA_URL) {
  */
 export function canAutoStartOllama() {
   return process.env.NODE_ENV !== "production" && isLocalOllamaUrl();
+}
+
+export type OllamaInstallPlan =
+  | { ok: true; command: string; args: string[] }
+  | { ok: false; message: string };
+
+export function getOllamaInstallPlan({
+  platform = process.platform,
+  hasBrew,
+}: {
+  platform?: NodeJS.Platform | string;
+  hasBrew: boolean;
+}): OllamaInstallPlan {
+  if (platform === "darwin" && hasBrew) {
+    return { ok: true, command: "brew", args: ["install", "ollama"] };
+  }
+
+  return {
+    ok: false,
+    message:
+      "Install Ollama manually, then return here and click Connect again. Automatic install is currently supported only on macOS when Homebrew is available.",
+  };
+}
+
+async function commandExists(command: string): Promise<boolean> {
+  const paths = (process.env.PATH ?? "").split(":").filter(Boolean);
+  for (const basePath of paths) {
+    try {
+      await access(`${basePath}/${command}`);
+      return true;
+    } catch {
+      // Keep searching PATH.
+    }
+  }
+  return false;
+}
+
+function runInstallCommand(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+
+    child.stdout?.on("data", (chunk) => {
+      output += chunk.toString();
+      output = output.slice(-4000);
+    });
+    child.stderr?.on("data", (chunk) => {
+      output += chunk.toString();
+      output = output.slice(-4000);
+    });
+
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(output.trim() || `${command} ${args.join(" ")} failed with exit code ${code}.`));
+    });
+  });
+}
+
+export async function installOllamaLocally(): Promise<void> {
+  if (!canAutoStartOllama()) {
+    throw new Error("Installing Ollama automatically is only available for a local OLLAMA_URL outside production.");
+  }
+
+  const plan = getOllamaInstallPlan({ hasBrew: await commandExists("brew") });
+  if (!plan.ok) throw new Error(plan.message);
+
+  await runInstallCommand(plan.command, plan.args);
 }
 
 export async function getOllamaStatus(): Promise<OllamaStatus> {
