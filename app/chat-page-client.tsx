@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
+import { Check, Copy, Download, MessageCircleQuestion, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { testingFetch } from "@/lib/testing-api-client";
 import { Input } from "@/components/ui/input";
@@ -315,6 +315,18 @@ export default function Home() {
     }
   }
 
+  // Ephemeral, client-only, session-scoped: this never re-fetches or
+  // re-scans the source file, and never writes anything anywhere — it just
+  // pre-fills a follow-up question naming the source, so the retrieval that
+  // already runs on every chat message (lib/rag/retrieval.ts) reliably
+  // matches the same chunk again instead of missing it on a vague follow-up.
+  // The model then reinterprets already-retrieved text; the chat app has no
+  // path to alter what's actually stored in the knowledge base.
+  function requestDifferentExplanation(source: ChatSource) {
+    setInput(`Can you explain the content from "${source.title}" a different way?`);
+    document.getElementById("message")?.focus();
+  }
+
   async function copyMessageText(message: ChatMessage) {
     try {
       await navigator.clipboard.writeText(message.text);
@@ -482,21 +494,32 @@ export default function Home() {
                   }
                 >
                   {message.text}
-                  {message.sources?.some((source) => source.downloadable) && (
+                  {message.sources && message.sources.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2 whitespace-normal">
-                      {message.sources
-                        .filter((source) => source.downloadable)
-                        .map((source) => (
+                      {message.sources.map((source) => (
+                        <span key={source.documentId} className="inline-flex items-center gap-1">
+                          {source.downloadable && (
+                            <button
+                              type="button"
+                              onClick={() => downloadSource(source)}
+                              className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50"
+                            >
+                              <Download className="size-3" />
+                              {source.title}
+                            </button>
+                          )}
                           <button
-                            key={source.documentId}
                             type="button"
-                            onClick={() => downloadSource(source)}
-                            className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50"
+                            onClick={() => requestDifferentExplanation(source)}
+                            aria-label={`Explain ${source.title} a different way`}
+                            title="Explain this differently"
+                            className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-black/60 hover:bg-black/5 hover:text-black"
                           >
-                            <Download className="size-3" />
-                            {source.title}
+                            <MessageCircleQuestion className="size-3" />
+                            {!source.downloadable && source.title}
                           </button>
-                        ))}
+                        </span>
+                      ))}
                     </div>
                   )}
                   {message.role === "bot" && !message.isGreeting && (
