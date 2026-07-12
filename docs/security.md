@@ -26,6 +26,12 @@ Instead: run `npm run setup` yourself, in your own terminal. It asks for each va
 
 To confirm setup worked without the assistant ever opening `.env`, run `npm run check:env` — it reports only `connected`/`failed` per service (`lib/database-health.ts`'s `getDatabaseConnectionStatus`, `lib/storage.ts`'s `getStorageConnectionStatus`), never the underlying URL or keys. An assistant can safely run this itself and read its output.
 
+**The full ritual an assistant follows every time this flow is invoked:**
+1. Tell the user to run `npm run setup`; on a platform where a separate terminal window can be opened (e.g. macOS via `osascript`), open one — `cd` into the repo root explicitly in that same command, since a freshly opened terminal is not guaranteed to start in the project directory.
+2. Ask the user directly: **did it finish? yes or no.**
+3. If yes, run `npm run check:env` yourself and report the result.
+4. If no — or the user reports an error — do not just leave it there. Ask what the terminal showed, diagnose it (a very common one: the window opened in the wrong directory and couldn't find `package.json`), and offer to reopen a corrected terminal so they can retry. Repeat from step 2.
+
 This project's `.claude/settings.json` adds a `permissions.deny` rule blocking Claude Code's own `Read` tool and common `Bash` read patterns (`cat`, `less`, `head`, `tail`, `grep`) against `.env` — enforced by the tool-permission layer before the request reaches the model, the same category as this project's other hardcoded rules that a prompt can't talk it out of. Be honest about the limit: `Bash` is a general-purpose shell, so a sufficiently indirect command could still slip past a pattern-based deny list — this is defense-in-depth, not a cryptographic guarantee. The paired behavioral commitment (documented in every AI-instruction file in this repo) is that the assistant does not intentionally read `.env` and only ever uses `npm run check:env` to verify configuration. A genuinely unbypassable version would store secrets in the OS's native credential vault (Keychain/Credential Manager/keyring) with per-access user authorization instead of a plain-text file — not built here, a documented future option if you need that guarantee.
 
 ## No Prisma client in browser components
