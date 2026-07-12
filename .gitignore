@@ -47,5 +47,9 @@ next-env.d.ts
 # tesseract.js OCR language data, downloaded at runtime into cwd
 *.traineddata
 
-# Claude Code local session/tooling config
-/.claude/
+# Claude Code local session/tooling config — settings.json is the one
+# exception: it carries the shared permissions.deny rule protecting .env
+# (see docs/security.md#local-secret-onboarding), so it ships with the repo
+# for every clone instead of staying machine-local.
+/.claude/*
+!/.claude/settings.json

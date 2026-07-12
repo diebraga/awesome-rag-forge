@@ -21,6 +21,8 @@
     "db:local:down": "docker compose down",
     "db:local:logs": "docker compose logs -f postgres",
     "start": "next start",
+    "setup": "tsx scripts/setup-env.ts",
+    "check:env": "tsx scripts/check-env.ts",
     "lint": "eslint",
     "test": "vitest run"
   },

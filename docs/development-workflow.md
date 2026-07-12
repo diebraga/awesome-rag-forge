@@ -88,6 +88,8 @@ Normally you don't run this manually — an MCP client (Claude Desktop, Codex) l
 
 | Script | Purpose |
 | --- | --- |
+| `npm run setup` | Interactive local secret setup — asks for `DATABASE_URL`/API keys/storage credentials one at a time with masked input and writes them into `.env`. Run this yourself; never paste secrets into an AI assistant's chat — see [Security Considerations](security.md#local-secret-onboarding--never-paste-secrets-into-an-ai-assistants-chat). |
+| `npm run check:env` | Reports database/storage connection status only (`connected`/`failed`) — safe for an AI assistant to run itself, never reveals the underlying values. |
 | `npm run dev` | Start the Next.js dev server. |
 | `npm run build` | Production build. |
 | `npm run start` | Run the production build. |

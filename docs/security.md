@@ -18,6 +18,16 @@ The reverse direction is enforced too: `approve_chunk_update` **removes** `APPRO
 - `.env` is gitignored; `.env.example` must only contain placeholders.
 - If you add logging to the MCP server or API routes, log identifiers (document IDs, chunk IDs) rather than full env values.
 
+## Local secret onboarding — never paste secrets into an AI assistant's chat
+
+`DATABASE_URL`, provider API keys, and storage credentials must never be typed into a chat with an AI coding assistant — that puts a real secret into a cloud-hosted conversation transcript, which is the wrong place for it regardless of how "local" or "just a test" the setup feels.
+
+Instead: run `npm run setup` yourself, in your own terminal. It asks for each value one at a time with masked input (each keystroke echoes as `*`) and writes it straight into `.env`; nothing is echoed back, logged, or transmitted anywhere. All fields except `DATABASE_URL` are optional — press enter to skip. When an AI assistant needs you to configure secrets, it should tell you to run this command (and, where the platform supports it, open a separate terminal window for you) rather than ever asking you to paste a value into the chat.
+
+To confirm setup worked without the assistant ever opening `.env`, run `npm run check:env` — it reports only `connected`/`failed` per service (`lib/database-health.ts`'s `getDatabaseConnectionStatus`, `lib/storage.ts`'s `getStorageConnectionStatus`), never the underlying URL or keys. An assistant can safely run this itself and read its output.
+
+This project's `.claude/settings.json` adds a `permissions.deny` rule blocking Claude Code's own `Read` tool and common `Bash` read patterns (`cat`, `less`, `head`, `tail`, `grep`) against `.env` — enforced by the tool-permission layer before the request reaches the model, the same category as this project's other hardcoded rules that a prompt can't talk it out of. Be honest about the limit: `Bash` is a general-purpose shell, so a sufficiently indirect command could still slip past a pattern-based deny list — this is defense-in-depth, not a cryptographic guarantee. The paired behavioral commitment (documented in every AI-instruction file in this repo) is that the assistant does not intentionally read `.env` and only ever uses `npm run check:env` to verify configuration. A genuinely unbypassable version would store secrets in the OS's native credential vault (Keychain/Credential Manager/keyring) with per-access user authorization instead of a plain-text file — not built here, a documented future option if you need that guarantee.
+
 ## No Prisma client in browser components
 
 Both `lib/prisma.ts` and `mcp/rag-manager/prisma.ts` are server-only. Never import either from a `"use client"` component — this would leak database credentials and query surface to the browser bundle.

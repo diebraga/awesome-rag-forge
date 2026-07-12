@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const REQUIRED_STORAGE_ENV_VARS = [
@@ -37,6 +37,33 @@ function getStorageClient() {
     });
   }
   return cachedClient;
+}
+
+export type StorageConnectionStatus =
+  | { ok: true }
+  | { ok: false; reason: "missing" | "connection"; error: string };
+
+// Status-only, like getDatabaseConnectionStatus in lib/database-health.ts —
+// reports connected/failed, never the underlying bucket name or credentials.
+// This is what lets an AI assistant verify storage setup without ever
+// reading STORAGE_* values itself; see scripts/check-env.ts.
+export async function getStorageConnectionStatus(): Promise<StorageConnectionStatus> {
+  if (!isStorageConfigured()) {
+    return { ok: false, reason: "missing", error: STORAGE_NOT_CONFIGURED_MESSAGE };
+  }
+
+  try {
+    const client = getStorageClient();
+    await client.send(new HeadBucketCommand({ Bucket: process.env.STORAGE_BUCKET! }));
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      reason: "connection",
+      error:
+        "Unable to reach the configured storage bucket. Check STORAGE_BUCKET, STORAGE_ACCESS_KEY_ID, STORAGE_SECRET_ACCESS_KEY, STORAGE_REGION, and STORAGE_ENDPOINT.",
+    };
+  }
 }
 
 export async function uploadFileToStorage(key: string, body: Buffer, contentType: string) {
