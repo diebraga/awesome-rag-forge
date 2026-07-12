@@ -88,7 +88,8 @@ Normally you don't run this manually — an MCP client (Claude Desktop, Codex) l
 
 | Script | Purpose |
 | --- | --- |
-| `npm run setup` | Interactive local secret setup — asks for `DATABASE_URL`/API keys/storage credentials one at a time with masked input and writes them into `.env`. Run this yourself; never paste secrets into an AI assistant's chat — see [Security Considerations](security.md#local-secret-onboarding--never-paste-secrets-into-an-ai-assistants-chat). |
+| `npm run setup` | Interactive local database/storage setup — asks for `DATABASE_URL`/`STORAGE_*` one at a time with masked input and writes them into `.env`. Run this yourself; never paste secrets into an AI assistant's chat — see [Security Considerations](security.md#local-secret-onboarding--never-paste-secrets-into-an-ai-assistants-chat). |
+| `npm run setup:provider -- <id>` | Interactive setup for one hosted provider's key (`openai`/`anthropic`/`gemini`) — triggered from the chat UI's provider chooser. Same masked-input, local-only behavior as `npm run setup`. |
 | `npm run check:env` | Reports database/storage connection status only (`connected`/`failed`) — safe for an AI assistant to run itself, never reveals the underlying values. |
 | `npm run dev` | Start the Next.js dev server. |
 | `npm run build` | Production build. |

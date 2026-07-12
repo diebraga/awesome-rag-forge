@@ -22,12 +22,17 @@ The reverse direction is enforced too: `approve_chunk_update` **removes** `APPRO
 
 `DATABASE_URL`, provider API keys, and storage credentials must never be typed into a chat with an AI coding assistant — that puts a real secret into a cloud-hosted conversation transcript, which is the wrong place for it regardless of how "local" or "just a test" the setup feels.
 
-Instead: run `npm run setup` yourself, in your own terminal. It asks for each value one at a time with masked input (each keystroke echoes as `*`) and writes it straight into `.env`; nothing is echoed back, logged, or transmitted anywhere. All fields except `DATABASE_URL` are optional — press enter to skip. When an AI assistant needs you to configure secrets, it should tell you to run this command (and, where the platform supports it, open a separate terminal window for you) rather than ever asking you to paste a value into the chat.
+There are two separate entry points, both masked, both local-only:
+
+- **`npm run setup`** — database and storage only (`DATABASE_URL`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_REGION`, `STORAGE_ENDPOINT`). This is the general first-time setup flow.
+- **`npm run setup:provider -- <openai|anthropic|gemini>`** — exactly one hosted LLM provider's API key. This is triggered specifically when the user picks a provider in the chat UI's provider chooser (see `getProviderSetupPrompt` in `lib/chat-providers/catalog.ts`) — an AI assistant should open this flow at that moment instead of ever asking the user to paste the key into the chat.
+
+Both scripts ask for each value one at a time with masked input (each keystroke echoes as `*`) and write straight into `.env`; nothing is echoed back, logged, or transmitted anywhere. All fields except `DATABASE_URL` are optional — press enter to skip. When an AI assistant needs the user to configure secrets, it should tell them to run the relevant command (and, where the platform supports it, open a separate terminal window for them) rather than ever asking them to paste a value into the chat.
 
 To confirm setup worked without the assistant ever opening `.env`, run `npm run check:env` — it reports only `connected`/`failed` per service (`lib/database-health.ts`'s `getDatabaseConnectionStatus`, `lib/storage.ts`'s `getStorageConnectionStatus`), never the underlying URL or keys. An assistant can safely run this itself and read its output.
 
-**The full ritual an assistant follows every time this flow is invoked:**
-1. Tell the user to run `npm run setup`; on a platform where a separate terminal window can be opened (e.g. macOS via `osascript`), open one — `cd` into the repo root explicitly in that same command, since a freshly opened terminal is not guaranteed to start in the project directory.
+**The full ritual an assistant follows every time either flow is invoked:**
+1. Tell the user to run `npm run setup` (database/storage) or `npm run setup:provider -- <id>` (a specific hosted provider's key, when they've just chosen that provider in the chat UI); on a platform where a separate terminal window can be opened (e.g. macOS via `osascript`), open one — `cd` into the repo root explicitly in that same command, since a freshly opened terminal is not guaranteed to start in the project directory.
 2. Ask the user with a proper multiple-choice question, not a plain sentence: **Yes, it finished** / **No, it didn't**. Only these two — don't add a manual third "Other" option, since the question tool already offers a free-text "Other" automatically for anything that doesn't fit (an error, unsure, etc.); adding your own duplicates it.
 3. If "Yes," run `npm run check:env` yourself and report the result.
 4. If "No" or the user picked the built-in "Other" to describe something else, do not just leave it there. Ask what happened (or what the terminal showed), diagnose it (a very common one: the window opened in the wrong directory and couldn't find `package.json`), and offer to reopen a corrected terminal so they can retry. Repeat from step 2.

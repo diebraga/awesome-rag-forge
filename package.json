@@ -22,6 +22,7 @@
     "db:local:logs": "docker compose logs -f postgres",
     "start": "next start",
     "setup": "tsx scripts/setup-env.ts",
+    "setup:provider": "tsx scripts/setup-provider.ts",
     "check:env": "tsx scripts/check-env.ts",
     "lint": "eslint",
     "test": "vitest run"
