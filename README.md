@@ -160,6 +160,10 @@ Every route is described in a generated OpenAPI 3.0 spec — interactive Swagger
 
 The local testing UI includes `/review`, a human-friendly review queue for pending chunks and harness rules. This page is deliberately local-only: it reads pending rows directly from the configured Postgres database and uses server actions for approve/reject decisions, guarded by `ENABLE_TESTING_SURFACE=true` and a non-production runtime check (`lib/local-review-guard.ts`). It is not an MCP client, does not require `MCP_AUTH_TOKEN`, and must not be exposed as a hosted admin panel. The normal chat, collections, harness, and API surfaces remain approved-data/read-only.
 
+## Public site
+
+Everything above is local-only by design. If you want a public URL for this project, it's [`public-site/index.html`](public-site/index.html) — a single static HTML file with no framework, no build step, and no server code. It fetches and renders this repo's `README.md` live from GitHub, so editing docs and pushing updates the live page with no redeploy. Deployable to GitHub Pages or any static host. See [Deployment](docs/deployment.md#the-only-thing-meant-to-be-deployed-publicly-public-site) for why this is the only thing meant to be deployed, and how it makes that guarantee structurally rather than by convention.
+
 ## Documentation
 
 Full documentation lives in [`docs/`](docs/), organized by topic:

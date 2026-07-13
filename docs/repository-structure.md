@@ -8,6 +8,11 @@ app/
   collections/page.tsx      Plain read-only list of APPROVED collections
   collections/[collectionId]/page.tsx  Paginated, expandable document/chunk view for one collection
   harness/page.tsx          Read-only view of the chat's identity + APPROVED capabilities/restrictions
+  review/page.tsx           Local-only review queue for PENDING_REVIEW chunks/harness rules —
+                             reads Postgres directly, guarded by lib/local-review-guard.ts;
+                             not an MCP client, not exposed publicly
+  review/actions.ts           Server actions for approve/reject; each independently calls
+                             assertLocalReviewMode() before writing
   api/chat/route.ts        Chat endpoint: calls Ollama with the full assistant context
   api/rag/route.ts         Debug endpoint: returns the current approved RAG context
   api/rag/context/route.ts  Full awareness bundle for external agents (identity, harness, stats, context)
@@ -35,6 +40,15 @@ lib/
                               APPROVED-only data for the Collections pages. The
                               Harness page reuses getAssistantConfig() (chat-context.ts)
                               and getApprovedHarnessRules() (harness.ts) directly instead.
+    chunk-embeddings.ts          embedChunkForApproval()/storeChunkEmbedding() — shared between
+                              the MCP server's approve_chunk and app/review/actions.ts, so both
+                              approval paths embed identically; moved here from mcp/rag-manager/
+                              because it's pure logic both sides need (see coding-standards.md)
+    retrieval-enrichment.ts      Alias/hypernym generation for chunk metadata, same
+                              shared-logic reasoning as chunk-embeddings.ts above
+  local-review-guard.ts    assertLocalReviewMode() — fails closed unless ENABLE_TESTING_SURFACE=true
+                            and the runtime isn't production-like; the one gate every /review
+                            server action calls independently before writing
   chat-providers/          Swappable chat LLM backend (see docs/mcp-server.md's LLM provider note)
     types.ts                 ChatProvider interface — app/api/chat/route.ts only talks to this
     ollama.ts                 Default/only implementation today, wraps lib/ollama.ts's calls
@@ -53,6 +67,11 @@ mcp/
                               stdio subprocess; `/review` does not use this transport
     extraction.ts              PDF text extraction (pdf-parse) + OCR fallback (tesseract.js)
     proposal.ts              Builds and validates source-insert / file-upload proposals
+    review-triage.ts           buildReviewTriage() — classifies a proposal's disposition
+                              (READY_FOR_BATCH_APPROVAL/NEEDS_REVIEW/CONFLICTS_WITH_APPROVED/
+                              DUPLICATE_OR_UPDATE_CANDIDATE) for prioritization only;
+                              trustedUseBlocked: true is hardcoded as a literal type on
+                              every branch — it can never mark content auto-approvable
     chunking.ts               Paragraph-based and page-aware chunking; estimateTokens() is shared
     prisma.ts                 Prisma client for the MCP server (separate from lib/prisma.ts)
     README.md                  MCP-specific usage notes
@@ -61,6 +80,10 @@ prisma/
   schema.prisma           Generic RAG + harness schema (collections, documents, chunks, sources,
                            reviews, feedback, eval cases, assistant config, harness rules)
   seed.ts                  Seeds a sample collection, default assistant name, and default harness rules
+
+public-site/              The ONLY thing meant to be deployed publicly — see docs/deployment.md
+  index.html               Single static file, no framework, no build step, no server code.
+                           Fetches and renders README.md live from GitHub client-side.
 
 docs/                     Modular documentation (this directory)
 CLAUDE.md                 Entry point for Claude Code / Claude Desktop sessions
