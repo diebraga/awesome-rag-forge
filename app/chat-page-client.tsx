@@ -2,11 +2,13 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, MessageCircleQuestion, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
+import { Check, Copy, Download, MessageCircleQuestion, Mic, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { testingFetch } from "@/lib/testing-api-client";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { describeSpeechRecognitionError, getSpeechTranscript, createSpeechRecognition, type BrowserSpeechRecognizer } from "./speech-recognition";
 import { getTypewriterStep, getTypewriterText } from "./typewriter";
 
 type ChatSource = {
@@ -23,6 +25,7 @@ type ChatMessage = {
   question?: string;
   isGreeting?: boolean;
   animate?: boolean;
+  isPending?: boolean;
 };
 
 type FeedbackRating = "GOOD" | "BAD";
@@ -74,13 +77,33 @@ function describePullStatus(status: string): string {
 
 function ThinkingBubble() {
   return (
-    <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
+    <div className="flex min-h-11 items-center gap-2 rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
       <span className="sr-only">Thinking</span>
       <span className="inline-flex items-center gap-1" aria-hidden="true">
         <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
         <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
         <span className="size-1.5 animate-bounce rounded-full bg-current" />
       </span>
+    </div>
+  );
+}
+
+function PendingAssistantBubble() {
+  return (
+    <div className="min-h-24 w-full max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span className="sr-only">Preparing response</span>
+        <span className="inline-flex items-center gap-1" aria-hidden="true">
+          <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
+          <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
+          <span className="size-1.5 animate-bounce rounded-full bg-current" />
+        </span>
+      </div>
+      <div className="mt-3 space-y-2" aria-hidden="true">
+        <Skeleton className="h-3 w-11/12 bg-black/10" />
+        <Skeleton className="h-3 w-4/5 bg-black/10" />
+        <Skeleton className="h-3 w-2/3 bg-black/10" />
+      </div>
     </div>
   );
 }
@@ -98,7 +121,10 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => buildInitialMessages("this assistant"));
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognizer | null>(null);
 
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
@@ -129,6 +155,7 @@ export default function Home() {
   const showProviderSetup = Boolean(selectedProvider && selectedProvider.id !== "ollama" && !selectedProvider.configured);
   const showProviderChooser = !selectedProvider || showProviderSetup;
   const chatDisabled = isLoading || !providerReady;
+  const hasPendingAssistantMessage = messages.some((message) => message.isPending);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -196,6 +223,7 @@ export default function Home() {
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", refreshAssistantName);
+      speechRecognitionRef.current?.abort();
     };
   }, []);
 
@@ -362,52 +390,96 @@ export default function Home() {
     }
   }
 
+  function handleVoiceInput() {
+    setVoiceError(null);
+
+    if (isListening) {
+      speechRecognitionRef.current?.stop();
+      return;
+    }
+
+    const speechRecognition = createSpeechRecognition(window as never);
+    if (!speechRecognition.supported) {
+      setVoiceError("Voice input is not available in this browser. Type your message instead.");
+      return;
+    }
+
+    const recognizer = speechRecognition.recognizer;
+    const baseInput = input.trimEnd();
+
+    recognizer.onresult = (event) => {
+      const transcript = getSpeechTranscript(event);
+      if (!transcript) return;
+      setInput(baseInput ? `${baseInput} ${transcript}` : transcript);
+    };
+    recognizer.onerror = (event) => {
+      setVoiceError(describeSpeechRecognitionError(event.error));
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+    recognizer.onend = () => {
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+
+    try {
+      speechRecognitionRef.current = recognizer;
+      setIsListening(true);
+      recognizer.start();
+    } catch {
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+      setVoiceError("Voice input could not start. Type your message or try again.");
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const question = input.trim();
     if (!question || chatDisabled || !selectedProvider) return;
 
-    const userMessage: ChatMessage = { id: Date.now(), role: "user", text: question };
-    const nextMessages = [...messages, userMessage];
+    const now = Date.now();
+    const userMessage: ChatMessage = { id: now, role: "user", text: question };
+    const pendingMessage: ChatMessage = { id: now + 1, role: "bot", text: "", isPending: true };
+    const requestMessages = [...messages, userMessage];
 
-    setMessages(nextMessages);
+    setMessages([...requestMessages, pendingMessage]);
     setInput("");
+    setVoiceError(null);
     setIsLoading(true);
 
     try {
       const response = await testingFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages.filter((message) => !message.isGreeting), model: selectedModel, provider: selectedProvider.id }),
+        body: JSON.stringify({ messages: requestMessages.filter((message) => !message.isGreeting), model: selectedModel, provider: selectedProvider.id }),
       });
 
       const data = (await response.json()) as { reply?: string; error?: string; sources?: ChatSource[]; model?: string };
       if (data.model) setAssistantName(data.model);
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: Date.now() + 1,
-          role: "bot",
-          text: data.reply ?? data.error ?? "The selected model did not return a response.",
-          sources: data.reply ? data.sources : undefined,
-          question: data.reply ? question : undefined,
-          animate: true,
-        },
-      ]);
+      const botMessage: ChatMessage = {
+        id: pendingMessage.id,
+        role: "bot",
+        text: data.reply ?? data.error ?? "The selected model did not return a response.",
+        sources: data.reply ? data.sources : undefined,
+        question: data.reply ? question : undefined,
+        animate: true,
+      };
+
+      setMessages((currentMessages) => currentMessages.map((message) => (message.id === pendingMessage.id ? botMessage : message)));
 
       if (!response.ok && selectedProvider.id === "ollama") checkOllamaStatus();
     } catch (error) {
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: Date.now() + 1,
-          role: "bot",
-          text: error instanceof Error ? error.message : "Unable to reach the selected model.",
-          animate: true,
-        },
-      ]);
+      const botMessage: ChatMessage = {
+        id: pendingMessage.id,
+        role: "bot",
+        text: error instanceof Error ? error.message : "Unable to reach the selected model.",
+        animate: true,
+      };
+
+      setMessages((currentMessages) => currentMessages.map((message) => (message.id === pendingMessage.id ? botMessage : message)));
       if (selectedProvider.id === "ollama") checkOllamaStatus();
     } finally {
       setIsLoading(false);
@@ -580,6 +652,15 @@ export default function Home() {
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-4 py-1 pr-2">
             {messages.map((message) => {
+              if (message.isPending) {
+                return (
+                  <div key={message.id} className="flex items-end gap-3 justify-start">
+                    <PersonAvatar />
+                    <PendingAssistantBubble />
+                  </div>
+                );
+              }
+
               const visibleCharacters = message.animate ? (visibleMessageChars[message.id] ?? 0) : message.text.length;
               const displayedText = message.role === "bot" ? getTypewriterText(message.text, visibleCharacters) : message.text;
               const isTyping = Boolean(message.animate && visibleCharacters < message.text.length);
@@ -587,7 +668,7 @@ export default function Home() {
               return (
                 <div key={message.id} className={`flex items-end gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                   {message.role === "bot" && <PersonAvatar />}
-                  <div className={message.role === "user" ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground" : "max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"}>
+                  <div className={message.role === "user" ? "max-w-[82%] rounded-2xl rounded-br-md bg-primary px-4 py-3 text-sm leading-6 text-primary-foreground" : "min-h-11 max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-foreground"}>
                     {displayedText}
                     {isTyping && <span className="ml-0.5 inline-block h-4 w-1 translate-y-0.5 animate-pulse rounded-full bg-current" aria-hidden="true" />}
                     {!isTyping && message.sources && message.sources.length > 0 && (
@@ -624,7 +705,7 @@ export default function Home() {
                 </div>
               );
             })}
-            {isLoading && (
+            {isLoading && !hasPendingAssistantMessage && (
               <div className="flex items-end gap-3">
                 <PersonAvatar />
                 <ThinkingBubble />
@@ -634,9 +715,14 @@ export default function Home() {
           </div>
         </ScrollArea>
 
-        <form onSubmit={handleSubmit} className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
+        {voiceError && <p className="shrink-0 text-xs text-black/50" role="status">{voiceError}</p>}
+
+        <form onSubmit={handleSubmit} className="flex min-h-[60px] w-full shrink-0 items-center gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
           <label className="sr-only" htmlFor="message">Message</label>
           <Input id="message" value={input} onChange={(event) => setInput(event.target.value)} placeholder={providerReady ? "Ask a question..." : selectedProvider?.id === "ollama" && serverStatus === "connected" ? "Download the selected model to start chatting" : "Connect a provider to start chatting"} className="h-11 flex-1 border-0 bg-transparent px-3 shadow-none focus-visible:ring-0" disabled={chatDisabled} />
+          <Button type="button" size="icon-lg" variant="outline" className={isListening ? "size-11 shrink-0 rounded-xl border-blue-300 bg-blue-50 text-blue-600" : "size-11 shrink-0 rounded-xl border-black/10 bg-black/[0.02] text-black/60 hover:text-black"} disabled={chatDisabled} aria-label={isListening ? "Stop voice input" : "Start voice input"} aria-pressed={isListening} title={isListening ? "Stop voice input" : "Start voice input"} onClick={handleVoiceInput}>
+            <Mic className={isListening ? "size-4 animate-pulse" : "size-4"} />
+          </Button>
           <Button type="submit" size="icon-lg" className="size-11 shrink-0 rounded-xl" disabled={chatDisabled} aria-label={isLoading ? "Waiting for response" : "Send message"}>
             <SendHorizontal className={isLoading ? "size-4 opacity-60" : "size-4"} />
           </Button>
