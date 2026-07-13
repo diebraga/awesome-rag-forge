@@ -8,7 +8,7 @@ import { testingFetch } from "@/lib/testing-api-client";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { describeSpeechRecognitionError, getSpeechTranscript, createSpeechRecognition, type BrowserSpeechRecognizer } from "./speech-recognition";
+import { describeSpeechRecognitionError, getSpeechTranscript, createSpeechRecognition, shouldRestartSpeechRecognition, type BrowserSpeechRecognizer } from "./speech-recognition";
 import { getTypewriterStep, getTypewriterText } from "./typewriter";
 
 type ChatSource = {
@@ -125,6 +125,10 @@ export default function Home() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const speechRecognitionRef = useRef<BrowserSpeechRecognizer | null>(null);
+  const keepListeningRef = useRef(false);
+  const manuallyStoppedListeningRef = useRef(false);
+  const speechHadErrorRef = useRef(false);
+  const speechRestartTimerRef = useRef<number | null>(null);
 
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
@@ -223,6 +227,8 @@ export default function Home() {
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", refreshAssistantName);
+      keepListeningRef.current = false;
+      if (speechRestartTimerRef.current !== null) window.clearTimeout(speechRestartTimerRef.current);
       speechRecognitionRef.current?.abort();
     };
   }, []);
@@ -390,36 +396,51 @@ export default function Home() {
     }
   }
 
-  function handleVoiceInput() {
-    setVoiceError(null);
-
-    if (isListening) {
-      speechRecognitionRef.current?.stop();
-      return;
-    }
-
+  function startVoiceRecognition() {
     const speechRecognition = createSpeechRecognition(window as never);
     if (!speechRecognition.supported) {
+      keepListeningRef.current = false;
       setVoiceError("Voice input is not available in this browser. Type your message instead.");
       return;
     }
 
     const recognizer = speechRecognition.recognizer;
-    const baseInput = input.trimEnd();
 
     recognizer.onresult = (event) => {
       const transcript = getSpeechTranscript(event);
       if (!transcript) return;
-      setInput(baseInput ? `${baseInput} ${transcript}` : transcript);
+      setInput((current) => {
+        const normalizedTranscript = transcript.trim();
+        if (!normalizedTranscript) return current;
+        if (current.trimEnd().endsWith(normalizedTranscript)) return current;
+        return current.trimEnd() ? `${current.trimEnd()} ${normalizedTranscript}` : normalizedTranscript;
+      });
     };
     recognizer.onerror = (event) => {
+      speechHadErrorRef.current = true;
+      keepListeningRef.current = false;
       setVoiceError(describeSpeechRecognitionError(event.error));
       setIsListening(false);
       speechRecognitionRef.current = null;
     };
     recognizer.onend = () => {
-      setIsListening(false);
       speechRecognitionRef.current = null;
+      const shouldRestart = shouldRestartSpeechRecognition({
+        keepListening: keepListeningRef.current,
+        manuallyStopped: manuallyStoppedListeningRef.current,
+        hadError: speechHadErrorRef.current,
+      });
+
+      if (!shouldRestart) {
+        keepListeningRef.current = false;
+        setIsListening(false);
+        return;
+      }
+
+      speechRestartTimerRef.current = window.setTimeout(() => {
+        speechRestartTimerRef.current = null;
+        startVoiceRecognition();
+      }, 250);
     };
 
     try {
@@ -427,10 +448,30 @@ export default function Home() {
       setIsListening(true);
       recognizer.start();
     } catch {
+      keepListeningRef.current = false;
       setIsListening(false);
       speechRecognitionRef.current = null;
       setVoiceError("Voice input could not start. Type your message or try again.");
     }
+  }
+
+  function handleVoiceInput() {
+    setVoiceError(null);
+
+    if (isListening) {
+      manuallyStoppedListeningRef.current = true;
+      keepListeningRef.current = false;
+      if (speechRestartTimerRef.current !== null) window.clearTimeout(speechRestartTimerRef.current);
+      speechRestartTimerRef.current = null;
+      speechRecognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    manuallyStoppedListeningRef.current = false;
+    speechHadErrorRef.current = false;
+    keepListeningRef.current = true;
+    startVoiceRecognition();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -528,33 +569,44 @@ export default function Home() {
   if (showProviderChooser) {
     return (
       <main className="flex h-full flex-col bg-white px-4 py-6 text-black">
-        <section className="mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col justify-center gap-5">
-          <header className="space-y-2 text-center">
+        <section className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col gap-4">
+          <header className="shrink-0 space-y-1.5">
             <p className="text-xs font-medium tracking-wide text-blue-600">Read-only knowledge base viewer</p>
-            <h1 className="text-2xl font-semibold tracking-tight text-black">Choose a chat provider</h1>
-            <p className="mx-auto max-w-2xl text-sm leading-6 text-black/60">
+            <h1 className="text-xl font-semibold tracking-tight text-black">Choose a chat provider</h1>
+            <p className="text-sm leading-6 text-black/60">
               The testing UI reads approved knowledge only. The MCP server remains the write path for RAG and harness changes.
             </p>
           </header>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {providers.map((provider) => (
-              <button
-                key={provider.id}
-                type="button"
-                onClick={() => selectProvider(provider)}
-                className="flex min-h-32 flex-col justify-between rounded-xl border border-black/10 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50"
-              >
-                <span>
-                  <span className="block text-base font-semibold text-black">{provider.shortLabel}</span>
-                  <span className="mt-2 block text-xs leading-5 text-black/60">{provider.description}</span>
-                </span>
-                <span className={provider.configured || provider.id === "ollama" ? "mt-4 text-xs text-blue-600" : "mt-4 text-xs text-black/45"}>
-                  {provider.configured || provider.id === "ollama" ? "Ready" : `Needs ${provider.envVar}`}
-                </span>
-              </button>
-            ))}
-          </div>
+          {providers.length === 0 && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Skeleton className="h-32 rounded-xl bg-black/10" />
+              <Skeleton className="h-32 rounded-xl bg-black/10" />
+              <Skeleton className="h-32 rounded-xl bg-black/10" />
+              <Skeleton className="h-32 rounded-xl bg-black/10" />
+            </div>
+          )}
+
+          {providers.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {providers.map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  onClick={() => selectProvider(provider)}
+                  className="flex min-h-32 flex-col justify-between rounded-xl border border-black/10 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <span>
+                    <span className="block text-base font-semibold text-black">{provider.shortLabel}</span>
+                    <span className="mt-2 block text-xs leading-5 text-black/60">{provider.description}</span>
+                  </span>
+                  <span className={provider.configured || provider.id === "ollama" ? "mt-4 text-xs text-blue-600" : "mt-4 text-xs text-black/45"}>
+                    {provider.configured || provider.id === "ollama" ? "Ready" : `Needs ${provider.envVar}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {showProviderSetup && selectedProvider && (
             <div className="rounded-xl border border-black/10 bg-black/[0.02] p-4">

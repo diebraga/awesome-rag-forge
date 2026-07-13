@@ -75,3 +75,7 @@ export function describeSpeechRecognitionError(error?: string) {
   if (error === "network") return "Voice input could not reach the browser speech service.";
   return "Voice input stopped. Type your message or try the microphone again.";
 }
+
+export function shouldRestartSpeechRecognition(input: { keepListening: boolean; manuallyStopped: boolean; hadError: boolean }) {
+  return input.keepListening && !input.manuallyStopped && !input.hadError;
+}

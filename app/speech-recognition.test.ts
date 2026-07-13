@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSpeechRecognition } from "./speech-recognition";
+import { createSpeechRecognition, shouldRestartSpeechRecognition } from "./speech-recognition";
 
 describe("createSpeechRecognition", () => {
   it("creates a browser speech recognizer with English input defaults", () => {
@@ -22,5 +22,19 @@ describe("createSpeechRecognition", () => {
     const recognition = createSpeechRecognition({});
 
     expect(recognition).toEqual({ supported: false, recognizer: null });
+  });
+});
+
+describe("shouldRestartSpeechRecognition", () => {
+  it("keeps listening when the browser ends recognition during an active mic session", () => {
+    expect(shouldRestartSpeechRecognition({ keepListening: true, manuallyStopped: false, hadError: false })).toBe(true);
+  });
+
+  it("stops listening when the user clicks the microphone to stop", () => {
+    expect(shouldRestartSpeechRecognition({ keepListening: true, manuallyStopped: true, hadError: false })).toBe(false);
+  });
+
+  it("stops listening after a speech recognition error", () => {
+    expect(shouldRestartSpeechRecognition({ keepListening: true, manuallyStopped: false, hadError: true })).toBe(false);
   });
 });
