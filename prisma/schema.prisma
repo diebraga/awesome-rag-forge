@@ -54,6 +54,38 @@ enum RagReviewStatus {
   REJECTED
 }
 
+
+// -----------------------------------------------------------------------------
+// CUSTOM APP USER / TENANT TABLES: DO NOT RELATE THEM DIRECTLY TO RAG TABLES
+// -----------------------------------------------------------------------------
+// This schema is the contract used by the MCP server. The MCP tools currently
+// create and manage RagCollection -> RagDocument -> RagChunk rows with the
+// relationships below. If you add your own app tables such as AppUser, Tenant,
+// Workspace, Customer, Organization, Account, etc., keep them decoupled from the
+// RAG tables unless you also update and test every MCP read/write path.
+//
+// SAFE CUSTOMIZATION PATTERN:
+//   - Add your custom table if your host app needs it.
+//   - Store access/ownership as plain nullable references on a generic scope
+//     layer or metadata, for example `scopeExternalRef = "user_123"`.
+//   - Let your app authenticate users and decide which external refs are allowed.
+//   - Let the RAG/MCP layer resolve those refs as data, not as Prisma relations.
+//
+// DANGEROUS / LIKELY BREAKING PATTERN:
+//   - Do NOT add required fields like `userId String` to RagCollection,
+//     RagDocument, or RagChunk unless every MCP create/update path supplies it.
+//   - Do NOT add `user AppUser @relation(...)` or similar relations from RAG
+//     tables to custom app tables unless you are intentionally forking the MCP
+//     contract and updating the tools accordingly.
+//   - Do NOT rename existing relation fields, change required/nullability rules,
+//     or reinterpret status/audience/visibility enums without MCP changes.
+//
+// Mental model: external app tables may exist beside the RAG schema, but the RAG
+// schema should only receive stable external references. Custom app identity is
+// owned by the host app; knowledge organization is owned by Awesome RAG Forge.
+// See docs/scoped-knowledge.md before changing schema relationships.
+// -----------------------------------------------------------------------------
+
 model RagCollection {
   id          String        @id @default(cuid())
   name        String

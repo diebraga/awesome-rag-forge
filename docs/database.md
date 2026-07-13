@@ -52,7 +52,7 @@ Collections and documents also include governance fields:
 
 End-user chat/read-only routes require both the collection and document to be `EXTERNAL` and include `CHAT`; MCP tools can manage all audiences.
 
-Per-person, per-company, or per-project personalization should add a generic `KnowledgeScope` concept instead of a full `User` auth model. A scope can reference an external user/profile/workspace id through `externalRef`, while the external application keeps owning login, roles, billing, and organization data. See [Scoped Knowledge](scoped-knowledge.md) for the intended schema boundary.
+Per-person, per-company, or per-project personalization should add a generic `KnowledgeScope` concept or plain nullable scope reference fields instead of a full `User` auth model. A scope can reference an external user/profile/workspace id through `externalRef`, while the external application keeps owning login, roles, billing, and organization data. Custom app tables may exist beside the RAG schema, but do not add required Prisma relations from `RagCollection`, `RagDocument`, or `RagChunk` to those tables unless you are intentionally updating the MCP server's write contract. See [Scoped Knowledge](scoped-knowledge.md) for the intended schema boundary.
 
 ### Review workflow
 

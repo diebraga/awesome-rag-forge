@@ -46,6 +46,63 @@ Awesome RAG Forge
 
 The bridge is `externalRef`, not a hard dependency on their schema.
 
+## Custom app tables without direct relationships
+
+If a host project already has users, tenants, organizations, workspaces, or customers, it may create or keep those tables in its own schema. That alone does not break Awesome RAG Forge.
+
+The important rule is that the existing RAG tables should not be made dependent on those custom app tables through required Prisma relations.
+
+Safe pattern:
+
+```prisma
+model AppUser {
+  id        String @id
+  name      String
+  email     String?
+  createdAt DateTime @default(now())
+}
+
+model RagCollection {
+  id               String @id @default(cuid())
+  name             String
+  scopeKind        String?
+  scopeExternalRef String?
+}
+```
+
+In that pattern, `scopeExternalRef` is just data. It can contain `user_123`, `tenant_456`, `workspace_acme`, or any other stable id from the host system. The MCP server can store and retrieve against that value once scope-aware logic exists, but Prisma does not force the MCP server to create a valid `AppUser` relation every time it creates RAG knowledge.
+
+Risky pattern:
+
+```prisma
+model RagCollection {
+  id     String @id @default(cuid())
+  name   String
+  userId String
+  user   AppUser @relation(fields: [userId], references: [id])
+}
+```
+
+That changes the RAG write contract. Existing MCP tools that create collections do not know how to satisfy a required `userId` or a required relation unless the tools are updated too. The result is usually a Prisma validation/runtime error, not graceful personalization.
+
+Use this rule of thumb:
+
+```text
+Additive nullable columns/tables: usually safe.
+Plain external reference fields: safe when the code knows how to use them.
+Required fields or relations on MCP-written tables: breaking unless MCP code is updated.
+Changing existing relation names, enum meanings, or nullability: breaking.
+```
+
+So the right integration shape is not "hard-coded ids everywhere." It is a deliberate soft-reference boundary:
+
+```text
+Host app owns identity and permissions.
+Awesome RAG Forge stores a stable external reference.
+MCP/retrieval logic filters by that reference.
+No direct Prisma relation is required between the two worlds.
+```
+
 ## Mental model
 
 Think of the database as one knowledge library with rooms:
