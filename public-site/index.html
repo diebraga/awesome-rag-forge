@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>awesome-rag-forge</title>
+<meta name="description" content="Local-first RAG knowledge-base builder — clone and run locally, managed through an MCP server." />
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0 auto;
+    max-width: 780px;
+    padding: 3rem 1.5rem 6rem;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #1a1a1a;
+    background: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e8e8e8; background: #0f0f0f; }
+    a { color: #6ea8ff; }
+    code { background: #1e1e1e; }
+    pre { background: #161616; }
+    blockquote { border-color: #3a3a3a; color: #a0a0a0; }
+    hr { border-color: #2a2a2a; }
+    table th, table td { border-color: #2a2a2a; }
+  }
+  h1, h2, h3 { line-height: 1.3; }
+  a { color: #0b5fff; }
+  code { background: #f2f2f2; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
+  pre { background: #f6f6f6; padding: 1em; border-radius: 8px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 3px solid #ddd; margin-left: 0; padding-left: 1em; color: #555; }
+  img { max-width: 100%; }
+  table { border-collapse: collapse; width: 100%; }
+  table th, table td { border: 1px solid #ddd; padding: 0.5em 0.75em; text-align: left; }
+  #status { color: #888; font-size: 0.9em; }
+</style>
+</head>
+<body>
+<div id="status">Loading README from GitHub…</div>
+<div id="content"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  // Nothing else lives here on purpose — this file has no server, no
+  // routes, no build step. It only ever renders the repo's own README,
+  // fetched fresh from GitHub, so editing docs never requires a redeploy.
+  // See docs/superpowers/specs/2026-07-13-public-site-split-design.md.
+  const README_URL = "https://raw.githubusercontent.com/diebraga/awesome-rag-forge/main/README.md";
+  const RAW_BASE = "https://raw.githubusercontent.com/diebraga/awesome-rag-forge/main/";
+  const statusEl = document.getElementById("status");
+  const contentEl = document.getElementById("content");
+
+  // README image paths are relative to the repo (e.g. public/images/x.webp),
+  // which only resolves on GitHub's own README view. Rewrite them to
+  // absolute raw-content URLs so images load here too — covers both
+  // markdown ![]() syntax and raw <img src="..."> (used for the centered,
+  // width-constrained header image).
+  function resolveRelativeImages(markdown) {
+    return markdown
+      .replace(/!\[([^\]]*)\]\((?!https?:\/\/)([^)]+)\)/g, (match, alt, path) => `![${alt}](${RAW_BASE}${path})`)
+      .replace(/(<img[^>]+src=")(?!https?:\/\/)([^"]+)(")/g, (match, prefix, path, suffix) => `${prefix}${RAW_BASE}${path}${suffix}`);
+  }
+
+  fetch(README_URL, { cache: "no-store" })
+    .then((response) => {
+      if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+      return response.text();
+    })
+    .then((markdown) => {
+      contentEl.innerHTML = marked.parse(resolveRelativeImages(markdown));
+      statusEl.remove();
+    })
+    .catch((error) => {
+      statusEl.textContent = `Could not load README from GitHub (${error.message}). View it directly: `;
+      const link = document.createElement("a");
+      link.href = "https://github.com/diebraga/awesome-rag-forge#readme";
+      link.textContent = link.href;
+      statusEl.appendChild(link);
+    });
+</script>
+</body>
+</html>
