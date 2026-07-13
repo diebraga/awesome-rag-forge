@@ -69,7 +69,7 @@ The MCP server is allowed to create and manage the RAG knowledge base and harnes
 
 ## The safety rule
 
-**The assistant must call `propose_source_insert` before writing anything new.** It must show the proposal to the user and ask an explicit approval question before calling `approve_source_insert` with `userApproval: true`. Clean knowledge is saved directly as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with `reviewReason` metadata explaining why it needs human review. Review triage is the switch between those paths, not a separate moderation queue for every item.
+**The assistant must call `propose_source_insert` before writing anything new.** It must show or summarize the proposal. If the user already asked to add/save the knowledge and the proposal is clean, the assistant can call `approve_source_insert` with `userApproval: true` and `reviewDecision: "AUTO"` without asking a second confirmation question. Ambiguous/problematic knowledge explains why and asks the user to choose `APPROVE_ANYWAY`, `SEND_TO_REVIEW`, revise/merge/update, or cancel. Review triage is the switch between those paths, not a separate moderation queue for every item.
 
 A proposal includes:
 
@@ -83,6 +83,17 @@ A proposal includes:
 - a `reviewTriage` recommendation (`READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`) that explains review priority and the recommended human action
 - an explicit list of warnings (e.g. "no category or domain was provided")
 - `requiredUserQuestions`, including an audience choice when the user did not identify whether the knowledge is `EXTERNAL`, `INTERNAL`, or `RESTRICTED`
+
+## Clean vs problematic knowledge decisions
+
+The MCP server should not ask a second confirmation for every clean add. If the user already said to add/save the knowledge and the proposal is clean (`trustedUseBlocked: false`), the calling assistant may call the approval tool with `reviewDecision: "AUTO"` and `userApproval: true`; the item is saved as `APPROVED`.
+
+If the proposal is ambiguous/problematic (`trustedUseBlocked: true`), the proposal response includes `requiredUserQuestions` that explain why and ask the user to choose:
+
+- `APPROVE_ANYWAY` — save directly as `APPROVED`, recording the override in `reviewReason`.
+- `SEND_TO_REVIEW` — save as `PENDING_REVIEW`, visible in the local review UI with the reason.
+- Revise/merge/update — change the proposal or use an update flow instead of saving as-is.
+- Cancel — do not call the approval tool.
 
 ## Document attachments require storage configuration and approval
 

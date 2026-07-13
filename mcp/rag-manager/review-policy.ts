@@ -2,6 +2,9 @@ import type { ReviewTriage } from "./review-triage";
 
 type KnowledgeStatus = "APPROVED" | "PENDING_REVIEW";
 
+export const REVIEW_DECISIONS = ["AUTO", "SEND_TO_REVIEW", "APPROVE_ANYWAY"] as const;
+export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
+
 export type ReviewReason = {
   title: string;
   summary: string;
@@ -25,12 +28,36 @@ export function reviewReasonFromTriage(triage: ReviewTriage): ReviewReason {
   };
 }
 
-export function knowledgePersistencePolicy(triage: ReviewTriage): {
+export function knowledgePersistencePolicy(triage: ReviewTriage, decision: ReviewDecision = "AUTO"): {
   documentStatus: KnowledgeStatus;
   chunkStatus: KnowledgeStatus;
   requiresReview: boolean;
   reviewReason: ReviewReason;
 } {
+  if (decision === "APPROVE_ANYWAY") {
+    return {
+      documentStatus: "APPROVED",
+      chunkStatus: "APPROVED",
+      requiresReview: false,
+      reviewReason: {
+        ...reviewReasonFromTriage(triage),
+        title: triage.trustedUseBlocked ? "Approved despite review signal" : "Added directly to brain",
+      },
+    };
+  }
+
+  if (decision === "SEND_TO_REVIEW") {
+    return {
+      documentStatus: "PENDING_REVIEW",
+      chunkStatus: "PENDING_REVIEW",
+      requiresReview: true,
+      reviewReason: {
+        ...reviewReasonFromTriage(triage),
+        title: triage.trustedUseBlocked ? reviewReasonFromTriage(triage).title : "Sent to review by user",
+      },
+    };
+  }
+
   const requiresReview = triage.trustedUseBlocked;
   const status: KnowledgeStatus = requiresReview ? "PENDING_REVIEW" : "APPROVED";
 
@@ -40,4 +67,13 @@ export function knowledgePersistencePolicy(triage: ReviewTriage): {
     requiresReview,
     reviewReason: reviewReasonFromTriage(triage),
   };
+}
+
+export function reviewDecisionQuestions(triage: ReviewTriage) {
+  if (!triage.trustedUseBlocked) return [];
+
+  const reason = reviewReasonFromTriage(triage);
+  return [
+    `This knowledge needs a decision because: ${reason.title}. ${reason.summary} Choose one: APPROVE_ANYWAY to add it directly to the brain, SEND_TO_REVIEW to keep it pending with this reason, revise the proposal/classification, merge/update an existing document, or cancel.`,
+  ];
 }

@@ -29,7 +29,7 @@ import { buildHarnessProposal } from "../../lib/rag/harness";
 import { withRetrievalAliases } from "../../lib/rag/retrieval-enrichment";
 import { withContentFingerprint } from "./placement-intelligence";
 import { embedChunkForApproval, storeChunkEmbedding } from "../../lib/rag/chunk-embeddings";
-import { knowledgePersistencePolicy } from "./review-policy";
+import { REVIEW_DECISIONS, knowledgePersistencePolicy, reviewDecisionQuestions } from "./review-policy";
 
 // Whole-file base64 round-trips through the calling model's context twice
 // (propose then approve), so cap it well below typical MCP message limits.
@@ -69,6 +69,7 @@ function textResult(text: string) {
 }
 
 const reviewStatusSchema = z.enum(["PENDING", "APPROVED", "REJECTED"]);
+const reviewDecisionSchema = z.enum(REVIEW_DECISIONS);
 const feedbackQueueSchema = z.enum(["needs_review", "positive", "all"]);
 const feedbackSortSchema = z.enum(["newest", "oldest", "priority"]);
 const harnessScopeSchema = z.enum(["USER_CHAT", "OPERATOR_AGENT", "MCP_AGENT", "ALL"]);
@@ -135,8 +136,9 @@ async function persistFileUpload(input: {
   fileName: string;
   fileBase64: string;
   storeOriginalFile: boolean;
+  reviewDecision?: (typeof REVIEW_DECISIONS)[number];
 }) {
-  const { proposal, fileName, fileBase64, storeOriginalFile } = input;
+  const { proposal, fileName, fileBase64, storeOriginalFile, reviewDecision = "AUTO" } = input;
 
   const willStoreFile = storeOriginalFile && isStorageConfigured();
   const storageFallbackNotice =
@@ -162,7 +164,7 @@ async function persistFileUpload(input: {
       }
     : proposal.reviewTriage;
 
-  const persistencePolicy = knowledgePersistencePolicy(effectiveReviewTriage);
+  const persistencePolicy = knowledgePersistencePolicy(effectiveReviewTriage, reviewDecision);
 
   const result = await prisma.$transaction(async (tx) => {
     const collection = proposal.shouldCreateCollection
@@ -576,8 +578,11 @@ server.registerTool(
       proposal,
       requiredUserQuestions: [
         ...proposal.requiredUserQuestions,
-        "Do you approve this collection, audience, visibility, and chunk organization, and do you want me to save it to the knowledge base?",
+        ...reviewDecisionQuestions(proposal.reviewTriage),
       ],
+      recommendedNextStep: proposal.reviewTriage.trustedUseBlocked
+        ? "Ask the user to choose APPROVE_ANYWAY, SEND_TO_REVIEW, revise/merge/update, or cancel before saving."
+        : "If the user already asked to add this knowledge, save it directly without asking another confirmation question.",
       writesToDatabase: false,
     });
   },
@@ -591,14 +596,15 @@ server.registerTool(
     inputSchema: {
       proposal: proposalSchema,
       userApproval: z.boolean(),
+      reviewDecision: reviewDecisionSchema.default("AUTO"),
     },
   },
-  async ({ proposal, userApproval }) => {
+  async ({ proposal, userApproval, reviewDecision }) => {
     if (!userApproval) {
       return textResult("Refused to write. userApproval must be true before saving knowledge.");
     }
 
-    const persistencePolicy = knowledgePersistencePolicy(proposal.reviewTriage);
+    const persistencePolicy = knowledgePersistencePolicy(proposal.reviewTriage, reviewDecision);
 
     const result = await prisma.$transaction(async (tx) => {
       const collection = proposal.shouldCreateCollection
@@ -715,7 +721,8 @@ server.registerTool(
         ...analyzed,
         requiredUserQuestions: [
           ...analyzed.proposal.requiredUserQuestions,
-          "Do you approve this collection, audience, visibility, and chunk organization? And should I also store the original file for download, or extract just the text (nothing kept in storage)?",
+          ...reviewDecisionQuestions(analyzed.proposal.reviewTriage),
+          "Should I also store the original file for download, or extract just the text (nothing kept in storage)?",
         ],
         storageConfigured: isStorageConfigured(),
         writesToDatabase: false,
@@ -761,8 +768,8 @@ server.registerTool(
         recommendedOrganization:
           "Keep one document per PDF. Group documents into the same collection when the user context, category/domain/tags, or file titles indicate a shared subject; otherwise keep separate classifications for search precision.",
         requiredUserQuestions: [
-          ...new Set(analyzed.flatMap((item) => item.proposal.requiredUserQuestions)),
-          "Do you approve this collection, audience, visibility, and chunk organization, and should I store the original PDFs for download or save extracted text only? You can choose once for the whole batch or per file.",
+          ...new Set(analyzed.flatMap((item) => [...item.proposal.requiredUserQuestions, ...reviewDecisionQuestions(item.proposal.reviewTriage)])),
+          "Should I store the original PDFs for download or save extracted text only? You can choose once for the whole batch or per file.",
         ],
         storageConfigured: isStorageConfigured(),
         writesToDatabase: false,
@@ -785,9 +792,10 @@ server.registerTool(
       fileBase64: z.string().min(1),
       storeOriginalFile: z.boolean(),
       userApproval: z.boolean(),
+      reviewDecision: reviewDecisionSchema.default("AUTO"),
     },
   },
-  async ({ proposal, fileName, fileBase64, storeOriginalFile, userApproval }) => {
+  async ({ proposal, fileName, fileBase64, storeOriginalFile, userApproval, reviewDecision }) => {
     if (!userApproval) {
       return textResult("Refused to write. userApproval must be true before saving an uploaded file.");
     }
@@ -797,6 +805,7 @@ server.registerTool(
       fileName,
       fileBase64,
       storeOriginalFile,
+      reviewDecision,
     });
 
     return jsonResult({
@@ -826,6 +835,7 @@ server.registerTool(
           fileName: z.string().min(1),
           fileBase64: z.string().min(1),
           storeOriginalFile: z.boolean(),
+          reviewDecision: reviewDecisionSchema.default("AUTO"),
         }),
       ).min(1),
       userApproval: z.boolean(),
@@ -858,6 +868,7 @@ server.registerTool(
       const { result, willStoreFile, storageFallbackNotice, persistencePolicy } = await persistFileUpload({
         ...file,
         proposal,
+        reviewDecision: file.reviewDecision,
       });
 
       if (file.proposal.shouldCreateCollection && !existingBatchCollectionId) {

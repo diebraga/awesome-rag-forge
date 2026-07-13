@@ -70,7 +70,7 @@ mcp/
     review-triage.ts           buildReviewTriage() — classifies a proposal's disposition
                               (READY_FOR_BATCH_APPROVAL/NEEDS_REVIEW/CONFLICTS_WITH_APPROVED/
                               DUPLICATE_OR_UPDATE_CANDIDATE) for prioritization only;
-                              trustedUseBlocked: true is hardcoded as a literal type on
+                              trustedUseBlocked marks whether knowledge needs a user decision before trusted use on
                               every branch — it can never mark content auto-approvable
     chunking.ts               Paragraph-based and page-aware chunking; estimateTokens() is shared
     prisma.ts                 Prisma client for the MCP server (separate from lib/prisma.ts)
