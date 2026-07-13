@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
 /**
- * Read-only data for the Collections pages (app/collections/). This is
+ * Approved-data reads for the Collections pages (app/collections/). This is
  * part of the same end-user-facing, read-only surface as the chat — it
  * uses the exact same APPROVED-only visibility as lib/rag/retrieval.ts and
  * lib/rag/chat-context.ts. Showing collection/document names here is a
@@ -12,8 +12,9 @@ import { prisma } from "@/lib/prisma";
  * docs/architecture.md and docs/security.md.
  *
  * Never expose DRAFT/PENDING_REVIEW/REJECTED/ARCHIVED content here. This is
- * a testing tool for the same audience as the chat, not the MCP server's
- * creator-facing surface.
+ * a testing tool for the same audience as the chat. The page has a separate
+ * local-only archive server action for already-visible approved rows, but
+ * these read helpers must never expose non-APPROVED content.
  */
 
 const DEFAULT_PAGE_SIZE = 10;

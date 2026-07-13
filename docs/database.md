@@ -65,7 +65,7 @@ APPROVED / REJECTED → ARCHIVED
 
 Only `APPROVED`, `EXTERNAL`, `CHAT`-visible documents and chunks are read by `lib/rag/retrieval.ts`. Clean MCP-approved knowledge can be written directly as `APPROVED`; ambiguous/problematic knowledge is written as `PENDING_REVIEW` with `reviewReason` metadata. `HarnessRule` reuses this same `RagStatus` enum for its own review states, and only `APPROVED` rows scoped to `USER_CHAT` or `ALL` are read by `lib/rag/chat-context.ts`.
 
-The `APPROVED → ARCHIVED` transition is driven by the MCP server's `archive_document` tool (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)) — the only supported way to remove knowledge from use. It's a status change, not a row deletion: `RagReview`/`RagFeedback` history is preserved, and every read path already excludes non-`APPROVED` rows, so archiving is enough to make a document disappear from the chat, the Collections pages, and the download route without touching foreign-keyed audit data.
+The `APPROVED → ARCHIVED` transition is normally driven by the MCP server's `archive_document` tool (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)); the local Collections detail page can also soft-archive already-approved visible documents/chunks after warning and reason. It's a status change, not a row deletion: `RagReview`/`RagFeedback` history is preserved, and every read path already excludes non-`APPROVED` rows, so archiving is enough to make content disappear from the chat, the Collections pages, and the download route without touching foreign-keyed audit data.
 
 ### `AssistantConfig` and `HarnessRule` are not part of this workflow
 

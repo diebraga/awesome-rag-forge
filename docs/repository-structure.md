@@ -5,8 +5,8 @@ app/
   page.tsx                Chat UI (client component), fills the viewport height —
                            only its message list scrolls, never the page
   layout.tsx              Root layout: fixed-height (h-dvh) shell wrapping Header + page content
-  collections/page.tsx      Plain read-only list of APPROVED collections
-  collections/[collectionId]/page.tsx  Paginated, expandable document/chunk view for one collection
+  collections/page.tsx      Plain approved-data list of collections
+  collections/[collectionId]/page.tsx  Paginated, expandable document/chunk view for one collection, with local archive controls
   harness/page.tsx          Read-only view of the chat's identity + APPROVED capabilities/restrictions
   review/page.tsx           Local-only review queue for PENDING_REVIEW chunks/harness rules —
                              reads Postgres directly, guarded by lib/local-review-guard.ts;
@@ -36,7 +36,7 @@ lib/
     harness.ts                shared, capability-neutral: rule validation and
                               data access only, used identically by the chat
                               and the MCP server, so rules can't drift
-    collections.ts              listApprovedCollections() / getCollectionDetail() — read-only,
+    collections.ts              listApprovedCollections() / getCollectionDetail() — approved-data read,
                               approved external chat-visible data for the Collections pages. The
                               Harness page reuses getAssistantConfig() (chat-context.ts)
                               and getApprovedHarnessRules() (harness.ts) directly instead.

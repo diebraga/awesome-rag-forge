@@ -4,7 +4,7 @@
   <img src="public/images/awesome-rag-forge-network.webp" alt="Awesome RAG Forge network diagram" width="520">
 </p>
 
-A local-first RAG knowledge-base builder managed through an MCP server, with a read-only testing UI and approval-gated knowledge operations.
+A local-first RAG knowledge-base builder managed through an MCP server, with a local testing UI and approval-gated knowledge operations.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16.2.4-black)
 ![React](https://img.shields.io/badge/React-19.2.4-149eca)
@@ -26,7 +26,7 @@ If a user drops this repository into an AI coding assistant and asks to set it u
 4. Once the database choice is clear, run the normal setup: `npm install`, copy `.env.example` to `.env`, fill `DATABASE_URL`, `npx prisma generate`, `npx prisma db push`, `npm run db:seed`, then `npm run dev`.
 5. If chat is requested and Ollama is missing, stopped, or missing the configured model, explain the issue and ask permission to install/start/pull as needed. The default model is `qwen2.5:7b-instruct` unless `.env` says otherwise.
 6. Optional bucket credentials are only needed to preserve original uploaded files for later download. If the user does not have them, continue with text/OCR ingestion; do not block setup.
-7. Treat the browser UI as a read-only testing surface, not an MCP client. Opening the browser lets the user test approved knowledge; it does not connect the LLM to MCP tools.
+7. Treat the browser UI as a local testing surface, not an MCP client. Opening the browser lets the user test approved knowledge and archive visible approved collection items with confirmation; it does not connect the LLM to MCP tools.
 8. To manage knowledge or harness rules, configure an MCP-capable client to run `npm run mcp:rag-manager` with `cwd` pointing at this local clone. Knowledge and harness writes happen through that MCP server only, with user approval for write/destructive actions. For Claude Code, register it directly from the repo root:
 
    ```bash
@@ -50,9 +50,9 @@ Current status: early local-first project. The MCP server can manage RAG knowled
 
 - **MCP-managed knowledge base**: create, review, approve, archive, and inspect RAG knowledge through MCP tools.
 - **Review triage**: clean knowledge is saved directly as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with clear reasons such as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`.
-- **Read-only testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready.
+- **Local testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready; Collections can archive approved visible knowledge after an explicit warning/confirmation.
 - **Human approval boundary where it matters**: MCP writes still require explicit user approval, but human review is reserved for ambiguous/problematic knowledge and harness changes.
-- **Audience and visibility controls**: collections and documents carry an audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); the chat and read-only UI only see approved external knowledge marked `CHAT`.
+- **Audience and visibility controls**: collections and documents carry an audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); chat and browsing surfaces only see approved external knowledge marked `CHAT`.
 - **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
 - **PDF ingestion**: MCP upload tools extract selectable text, fall back to OCR, clean text for LLM use, and optionally store original files in S3-compatible storage.
 - **Generated OpenAPI docs**: Swagger/OpenAPI is generated from route annotations and gated behind the same local testing readiness checks.
@@ -80,7 +80,7 @@ flowchart LR
   DB --> UI
 ```
 
-The important boundary: HTTP routes can read approved state and record narrow answer feedback. MCP tools are the only path for creating, approving, archiving, or resolving operational knowledge workflows.
+The important boundary: HTTP routes can read approved state and record narrow answer feedback. MCP tools are the main path for creating, approving, archiving, or resolving operational knowledge workflows; the Collections page has one local guarded archive action for visible approved rows.
 
 Visibility labels describe use contexts (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`), not whether the MCP server can physically see a row. MCP tool access is governed by the tool's purpose, operating mode, and approval rules. If a user asks to add knowledge but does not say what kind it is, the assistant must ask them to choose `EXTERNAL`, `INTERNAL`, or `RESTRICTED` before saving.
 
@@ -145,7 +145,7 @@ npm run dev
 
 Open `http://localhost:3000`. If `DATABASE_URL` is missing, the app first shows database setup instructions; if it is present but unreachable, the app shows a database connection error. After the database is configured, the template enables the web testing surface locally with `ENABLE_TESTING_SURFACE=true`; if that flag is missing or false, the app shows instructions for turning it on and blocks the testing API routes. Keep it unset or `false` for Vercel/public deployments unless you intentionally enable it and configure `APP_API_KEY`. After the database is ready, the testing UI asks which chat provider to use. Ollama is the offline default and the UI can try to install/start it locally where supported; Claude, Codex/OpenAI, and Gemini show a copyable setup prompt until their API key is added to `.env` and the dev server is restarted.
 
-Opening the browser is enough to test the approved RAG, but it is not enough to manage knowledge. The browser UI is not an MCP client and should remain read-only. To let an assistant create, organize, approve, archive, or otherwise manage knowledge/harness rules, connect an MCP-capable client to the MCP server — see [docs/mcp-server.md](docs/mcp-server.md).
+Opening the browser is enough to test the approved RAG, browse collections, and locally archive already-approved visible documents/chunks from the Collections page after an explicit warning. It is still not an MCP client: creating, organizing, approving, correcting, uploading, or managing harness rules requires an MCP-capable client connected to the MCP server — see [docs/mcp-server.md](docs/mcp-server.md).
 
 ## LLM provider
 
@@ -153,7 +153,7 @@ The chat's reply-generating backend is swappable, not hardcoded — `app/api/cha
 
 The testing UI shows a provider chooser, caches the selected provider in the browser, and goes straight back to chat on reload once that provider is configured. If a hosted provider is missing its key, the UI shows a copyable setup prompt for the user's coding assistant instead of asking for secrets in the browser. Ollama remains local-first: the UI can attempt to install/start it on the same machine when local-only guards allow it, then pull one of the small allowlisted test models.
 
-The HTTP surface is intentionally split: chat/context/collections/document-download/harness routes are read-only testing and integration surfaces over approved data, while `/api/ollama/*` and `/api/chat/providers` are local setup/support routes. Knowledge and harness management still never happen over these routes; they remain MCP-only.
+The HTTP surface is intentionally split: chat/context/collections/document-download/harness routes are read-only testing and integration surfaces over approved data, while `/api/ollama/*` and `/api/chat/providers` are local setup/support routes. Knowledge and harness management still never happen over these HTTP routes. The only browser-side knowledge maintenance exception is the local Collections page server action that archives visible approved documents/chunks after confirmation.
 
 ## API docs
 
@@ -161,7 +161,7 @@ Every route is described in a generated OpenAPI 3.0 spec — interactive Swagger
 
 ## Review dashboard
 
-The local testing UI includes `/review`, a human-friendly review queue for pending chunks and harness rules. This page is deliberately local-only: it reads pending rows directly from the configured Postgres database and uses server actions for approve/reject decisions, guarded by `ENABLE_TESTING_SURFACE=true` and a non-production runtime check (`lib/local-review-guard.ts`). It is not an MCP client, does not require `MCP_AUTH_TOKEN`, and must not be exposed as a hosted admin panel. The normal chat, collections, harness, and API surfaces remain approved-data/read-only.
+The local testing UI includes `/review`, a human-friendly review queue for pending chunks and harness rules. This page is deliberately local-only: it reads pending rows directly from the configured Postgres database and uses server actions for approve/reject decisions, guarded by `ENABLE_TESTING_SURFACE=true` and a non-production runtime check (`lib/local-review-guard.ts`). It is not an MCP client, does not require `MCP_AUTH_TOKEN`, and must not be exposed as a hosted admin panel. Collections uses the same local-only guard for its explicit archive action; chat, harness, and HTTP API routes remain approved-data/read-only.
 
 ## Public site
 

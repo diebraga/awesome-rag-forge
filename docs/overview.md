@@ -17,7 +17,7 @@ This project is intentionally domain-agnostic. The database schema uses generic 
 
 This project draws a hard line between reading the knowledge base and managing it. Each side has exactly one job:
 
-- **Chat application (`app/`)** — a viewer for testing `APPROVED` knowledge, plus a local-only `/review` page for the builder to approve/reject pending chunks and harness rules. The chat/collections/harness/API surfaces stay read-only; `/review` is guarded separately and is not a public admin panel.
+- **Chat application (`app/`)** — a viewer for testing `APPROVED` knowledge, plus local-only review and collection-maintenance actions. Chat/harness/API surfaces stay read-only; `/review` and Collections archive actions are guarded separately and are not public admin panels.
 - **MCP server (`mcp/rag-manager`)** — the **only** component authorized to manage the knowledge base and the chat's own behavioral rules (its "harness"). All creation, editing, approval, rejection, archiving, review, feedback, eval-case, and harness-rule management happens here, gated by a propose-then-approve workflow (see [MCP Server](mcp-server.md)).
 
 If you ever find yourself wiring a write operation into `app/`, that's a sign it belongs in the MCP server instead. See [System Architecture](architecture.md) for the enforced boundary.

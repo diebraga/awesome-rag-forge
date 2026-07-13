@@ -1,14 +1,16 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useTransition } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ChevronLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { Archive, AlertTriangle, ChevronLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { AudienceBadge, VisibilityBadges } from "@/components/knowledge-boundary-badges";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { testingFetch } from "@/lib/testing-api-client";
+import { archiveChunkAction, archiveDocumentAction } from "../actions";
+import { getArchiveWarning, type ArchiveTarget } from "../archive-policy";
 
 type CollectionDetailChunk = {
   id: string;
@@ -75,45 +77,155 @@ function DetailSkeleton() {
   );
 }
 
-function DocumentCard({ document }: { document: CollectionDetailDocument }) {
+type ArchiveConfirmation = {
+  target: ArchiveTarget;
+  id: string;
+  label: string;
+};
+
+function DocumentCard({
+  document,
+  collectionId,
+  onArchived,
+}: {
+  document: CollectionDetailDocument;
+  collectionId: string;
+  onArchived: () => Promise<unknown>;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [archiveConfirmation, setArchiveConfirmation] = useState<ArchiveConfirmation | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [isArchiving, startArchiveTransition] = useTransition();
+
+  function openArchiveConfirmation(nextConfirmation: ArchiveConfirmation) {
+    setArchiveConfirmation(nextConfirmation);
+    setArchiveReason("");
+    setArchiveError(null);
+  }
+
+  function confirmArchive() {
+    if (!archiveConfirmation) return;
+    const reason = archiveReason.trim();
+    if (!reason) {
+      setArchiveError("Add a reason before archiving this knowledge.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set("collectionId", collectionId);
+    formData.set("reason", reason);
+    if (archiveConfirmation.target === "document") formData.set("documentId", archiveConfirmation.id);
+    if (archiveConfirmation.target === "chunk") formData.set("chunkId", archiveConfirmation.id);
+
+    startArchiveTransition(async () => {
+      try {
+        if (archiveConfirmation.target === "document") {
+          await archiveDocumentAction(formData);
+        } else {
+          await archiveChunkAction(formData);
+        }
+        setArchiveConfirmation(null);
+        setArchiveReason("");
+        setArchiveError(null);
+        await onArchived();
+      } catch (error) {
+        setArchiveError(error instanceof Error ? error.message : "Unable to archive this knowledge.");
+      }
+    });
+  }
 
   return (
     <div className="rounded-xl border border-black/10">
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-      >
-        <div className="min-w-0 space-y-0.5">
-          <p className="truncate text-sm font-medium text-black">{document.title}</p>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <AudienceBadge audience={document.audience} />
-            <VisibilityBadges visibility={document.visibility} />
+      <div className="flex items-start justify-between gap-3 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left"
+        >
+          <div className="min-w-0 space-y-0.5">
+            <p className="truncate text-sm font-medium text-black">{document.title}</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <AudienceBadge audience={document.audience} />
+              <VisibilityBadges visibility={document.visibility} />
+            </div>
+            <p className="truncate text-xs text-black/50">
+              {[document.category, document.domain].filter(Boolean).join(" · ") ||
+                document.sourceType}
+              {" · "}
+              {document.chunks.length} chunk{document.chunks.length === 1 ? "" : "s"}
+            </p>
           </div>
-          <p className="truncate text-xs text-black/50">
-            {[document.category, document.domain].filter(Boolean).join(" · ") ||
-              document.sourceType}
-            {" · "}
-            {document.chunks.length} chunk{document.chunks.length === 1 ? "" : "s"}
-          </p>
+          {expanded ? (
+            <ChevronDown className="mt-1 size-4 shrink-0 text-black/40" />
+          ) : (
+            <ChevronRight className="mt-1 size-4 shrink-0 text-black/40" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => openArchiveConfirmation({ target: "document", id: document.id, label: document.title })}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-black/40 hover:bg-black/5 hover:text-black/70"
+          aria-label={`Archive document ${document.title}`}
+          title="Archive document"
+        >
+          <Archive className="size-4" />
+        </button>
+      </div>
+
+      {archiveConfirmation && (
+        <div className="mx-4 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+          <div className="flex gap-2">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="font-medium">Archive {archiveConfirmation.target}: {archiveConfirmation.label}</p>
+              <p className="text-xs leading-5 text-amber-950/80">{getArchiveWarning(archiveConfirmation.target)}</p>
+              <label className="block text-xs font-medium" htmlFor={`archive-reason-${archiveConfirmation.id}`}>Reason</label>
+              <input
+                id={`archive-reason-${archiveConfirmation.id}`}
+                value={archiveReason}
+                onChange={(event) => setArchiveReason(event.target.value)}
+                placeholder="Duplicate, outdated, incorrect, or no longer useful"
+                className="h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-black outline-none focus:border-amber-400"
+              />
+              {archiveError && <p className="text-xs text-amber-900">{archiveError}</p>}
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="destructive" disabled={isArchiving} onClick={confirmArchive}>
+                  {isArchiving ? "Archiving..." : "Archive"}
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={isArchiving} onClick={() => setArchiveConfirmation(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
-        {expanded ? (
-          <ChevronDown className="size-4 shrink-0 text-black/40" />
-        ) : (
-          <ChevronRight className="size-4 shrink-0 text-black/40" />
-        )}
-      </button>
+      )}
+
       {expanded && (
         <div className="space-y-3 border-t border-black/10 px-4 py-3">
           {document.chunks.length === 0 && (
             <p className="text-xs text-black/50">No approved chunks in this document.</p>
           )}
           {document.chunks.map((chunk) => (
-            <div key={chunk.id} className="space-y-1">
-              {chunk.sectionTitle && (
-                <p className="text-xs font-medium text-blue-600">{chunk.sectionTitle}</p>
-              )}
+            <div key={chunk.id} className="space-y-1 rounded-lg border border-black/5 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {chunk.sectionTitle && (
+                    <p className="text-xs font-medium text-blue-600">{chunk.sectionTitle}</p>
+                  )}
+                  <p className="text-xs text-black/40">Chunk {chunk.chunkIndex + 1}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openArchiveConfirmation({ target: "chunk", id: chunk.id, label: chunk.sectionTitle ?? `Chunk ${chunk.chunkIndex + 1}` })}
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-black/40 hover:bg-black/5 hover:text-black/70"
+                  aria-label={`Archive chunk ${chunk.chunkIndex + 1}`}
+                  title="Archive chunk"
+                >
+                  <Archive className="size-3.5" />
+                </button>
+              </div>
               <p className="whitespace-pre-wrap text-sm leading-6 text-black/80">
                 {chunk.chunkText}
               </p>
@@ -133,7 +245,7 @@ export default function CollectionDetailPage({
   const { collectionId } = use(params);
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const { data, error, isLoading, isValidating } = useSWR(
+  const { data, error, isLoading, isValidating, mutate } = useSWR(
     `/api/rag/collections/${collectionId}?page=${page}&pageSize=${pageSize}`,
     fetchCollectionDetail,
     { keepPreviousData: true },
@@ -190,7 +302,7 @@ export default function CollectionDetailPage({
                 <p className="text-sm text-black/50">No approved documents in this collection.</p>
               )}
               {data.documents?.map((document) => (
-                <DocumentCard key={document.id} document={document} />
+                <DocumentCard key={document.id} document={document} collectionId={collectionId} onArchived={mutate} />
               ))}
             </div>
 

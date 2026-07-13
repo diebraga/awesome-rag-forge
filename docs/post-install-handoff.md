@@ -15,7 +15,7 @@ Testing UI: <enabled / disabled / blocked by missing API key>
 Chat provider: <Ollama ready / Ollama missing / hosted provider configured / hosted provider needs API key>
 MCP: <registered / not registered / requires a new client session>
 
-The browser UI is the read-only testing surface. You can chat with approved RAG knowledge, browse approved collections, view approved harness rules, submit answer feedback, download approved stored documents, choose a local/hosted chat provider, and use local Ollama setup helpers.
+The browser UI is the local testing surface. You can chat with approved RAG knowledge, browse approved collections, archive visible approved collection documents/chunks after confirmation, view approved harness rules, submit answer feedback, download approved stored documents, choose a local/hosted chat provider, and use local Ollama setup helpers.
 
 The MCP server is the local tool server your AI assistant uses to manage the knowledge base. Through MCP, I can propose new knowledge, ingest PDFs/text, organize collections, review feedback, create eval cases, manage harness rules, and archive or correct knowledge after your approval.
 
