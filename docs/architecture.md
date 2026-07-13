@@ -76,6 +76,8 @@ Response rendered in the chat UI
 
 The chat route calls `buildAssistantContext()` with the latest user question to get a single assembled system prompt (identity + read-only rules + harness capabilities/restrictions + knowledge-base scope) plus query-ranked retrieved chunks, then calls the selected chat provider. Only chunks/documents with `status: APPROVED`, `audience: EXTERNAL`, and `visibility` containing `CHAT` are ever read here; only approved harness rules scoped to `USER_CHAT` or `ALL` are rendered. Nothing in this path issues a write query. See [API Routes](api-routes.md) for the full route contract.
 
+Future personalized retrieval should pass a generic `KnowledgeScope` descriptor into this path rather than making the chat app own users. The external caller or local profile picker decides who the current subject is; the RAG layer resolves that subject to allowed scopes and still applies the same approved/audience/visibility filters. See [Scoped Knowledge](scoped-knowledge.md).
+
 ### Any agent, not just this chat
 
 `buildAssistantContext()` in [`lib/rag/chat-context.ts`](../lib/rag/chat-context.ts) is the single, model-agnostic source of truth for identity, harness rules, and read-only behavior — it is not tied to Ollama or to this Next.js route. `GET /api/rag/context` exposes the same bundle over HTTP so a different LLM provider, a different app, or any other agent you connect later inherits the same name, the same instruction to never reveal the underlying model, the same configured capabilities/restrictions, and the same knowledge-base scope, without re-implementing any of this logic. See [API Routes](api-routes.md#get-apiragcontext).

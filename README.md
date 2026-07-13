@@ -52,7 +52,7 @@ Current status: early local-first project. The MCP server can manage RAG knowled
 - **Review triage**: clean knowledge is saved directly as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with clear reasons such as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`.
 - **Local testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready; Collections can archive approved visible knowledge after an explicit warning/confirmation.
 - **Human approval boundary where it matters**: MCP writes still require explicit user approval, but human review is reserved for ambiguous/problematic knowledge and harness changes.
-- **Audience and visibility controls**: collections and documents carry an audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); chat and browsing surfaces only see approved external knowledge marked `CHAT`.
+- **Audience, visibility, and scoped knowledge controls**: collections/documents carry audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); future per-person/per-company memory should attach to generic knowledge scopes, not a project-owned user/auth layer.
 - **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
 - **PDF ingestion**: MCP upload tools extract selectable text, fall back to OCR, clean text for LLM use, and optionally store original files in S3-compatible storage.
 - **Generated OpenAPI docs**: Swagger/OpenAPI is generated from route annotations and gated behind the same local testing readiness checks.
@@ -83,6 +83,8 @@ flowchart LR
 The important boundary: HTTP routes can read approved state and record narrow answer feedback. MCP tools are the main path for creating, approving, archiving, or resolving operational knowledge workflows; the Collections page has one local guarded archive action for visible approved rows.
 
 Visibility labels describe use contexts (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`), not whether the MCP server can physically see a row. MCP tool access is governed by the tool's purpose, operating mode, and approval rules. If a user asks to add knowledge but does not say what kind it is, the assistant must ask them to choose `EXTERNAL`, `INTERNAL`, or `RESTRICTED` before saving.
+
+Scoped knowledge is the planned way to add personalization while keeping the project generic. Do not model this as a built-in `User` auth system. Model it as `KnowledgeScope`: a stable reference to a person, company, workspace, project, agent, or external user id. A local profile layer or another app's user database can map its own users into scopes, while the RAG layer only enforces scope + audience + visibility. See [Scoped Knowledge](docs/scoped-knowledge.md).
 
 ## Technology Stack
 
@@ -180,6 +182,7 @@ Full documentation lives in [`docs/`](docs/), organized by topic:
 - [Database & Prisma](docs/database.md)
 - [Local Postgres Setup](docs/local-postgres.md)
 - [RAG Architecture](docs/rag.md)
+- [Scoped Knowledge](docs/scoped-knowledge.md)
 - [Feedback Review Loop](docs/feedback-review-loop.md)
 - [Post-Install Handoff](docs/post-install-handoff.md)
 - [MCP Server](docs/mcp-server.md)

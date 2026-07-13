@@ -20,6 +20,7 @@ Load only what's relevant to your current task:
 - [Database & Prisma](docs/database.md) — schema, `db push` workflow, generic fields.
 - [Local Postgres Setup](docs/local-postgres.md) — Docker-first local Postgres + pgvector setup.
 - [RAG Architecture](docs/rag.md) — chunking, retrieval, review triage, feedback/eval.
+- [Scoped Knowledge](docs/scoped-knowledge.md) — generic per-profile/per-user/per-company memory without owning auth/users.
 - [Feedback Review Loop](docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
 - [Post-Install Handoff](docs/post-install-handoff.md) — final setup message explaining UI vs. MCP capabilities.
 - [MCP Server](docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
@@ -55,6 +56,7 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 - Never describe the browser UI as MCP-connected or as an MCP client. Running `npm run dev` and opening the browser lets users test approved knowledge; `/review` can locally approve/reject pending chunks and harness rules, but creation/organization/archive/correction still requires a separate MCP-capable client configured to launch `npm run mcp:rag-manager` with `cwd` pointing at this clone.
 - Never let an MCP write path skip `propose_source_insert` → explicit user approval. After approval, clean knowledge may be written directly as `APPROVED` without another confirmation when the user already asked to add it. Ambiguous/problematic knowledge must explain why and ask the user to choose `APPROVE_ANYWAY`, `SEND_TO_REVIEW`, revise/merge/update, or cancel. `CONFLICTS_WITH_APPROVED`, `DUPLICATE_OR_UPDATE_CANDIDATE`, warnings, storage fallbacks, and restricted/internal uncertainty are review triggers.
 - Never let a harness rule (`HarnessRule`) grant a capability the code doesn't already enforce. Hardcoded identity/read-only rules always render before and win over harness config — see [docs/rag.md](docs/rag.md#the-harness-capabilities-and-restrictions). Keep `lib/rag/harness.ts`'s hardcoded blocklist; don't replace it with prompt-only guidance.
+- For personalization, do not add a project-owned `User` auth layer unless the user explicitly asks to build auth. Use generic knowledge scopes (`kind`, `label`, `externalRef`) so local profiles or external apps can map their own users/workspaces into RAG retrieval without breaking the MCP boundary.
 - Never add or restore domain-specific fields (e.g. legal/medical-only vocabulary) to the shared schema — use `category`/`domain`/`tags`/`metadata`.
 - Never deploy, push, or provision hosted infrastructure unless explicitly asked in the moment.
 - Production/public deployment is docs-only: Vercel must use `vercel.json` with framework `Other`, empty install/build commands, and `public-site` as the output directory. Never change production deploys to run `next build` or ship `app/`, `app/api`, `/review`, MCP code, Prisma, or local setup helpers.

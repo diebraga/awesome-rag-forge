@@ -32,6 +32,8 @@ Collections and documents carry two generic governance fields:
 
 The chat, `/api/rag/context`, `/api/rag/collections*`, and document download route only read approved knowledge where both the collection and document are `EXTERNAL` and include `CHAT`. The MCP server can list/search/manage all audiences because it is the creator-facing management surface. Proposal tools infer a safe default from the source text: public-looking knowledge defaults to external/chat-visible, internal/operator language defaults away from chat, and secret/credential/confidential language defaults to restricted review visibility. The assistant should show that proposed boundary to the user before saving.
 
+Scopes are a separate, future-facing dimension from audience and visibility. A scope answers who or what the knowledge belongs to, such as a local profile, external app user id, workspace, company, project, or agent. Audience still answers how shareable the knowledge is, and visibility still answers which surfaces may use it. Per-user or per-company memory should therefore be modeled as scoped knowledge, not as a full built-in `User` auth model. See [Scoped Knowledge](scoped-knowledge.md).
+
 ## Human review loop
 
 New knowledge follows a direct-or-review path:

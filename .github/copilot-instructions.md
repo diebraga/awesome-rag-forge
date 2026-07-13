@@ -20,6 +20,7 @@ Load only what's relevant to your current task:
 - [Database & Prisma](../docs/database.md) — schema, `db push` workflow, generic fields.
 - [Local Postgres Setup](../docs/local-postgres.md) — Docker-first local Postgres + pgvector setup.
 - [RAG Architecture](../docs/rag.md) — chunking, retrieval, review loop, feedback/eval.
+- [Scoped Knowledge](../docs/scoped-knowledge.md) - generic per-profile/per-user/per-company memory without owning auth/users.
 - [Feedback Review Loop](../docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
 - [Post-Install Handoff](../docs/post-install-handoff.md) — final setup message explaining UI vs. MCP capabilities.
 - [MCP Server](../docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
@@ -52,6 +53,7 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 - Never describe the browser UI as MCP-connected or as an MCP client. Running `npm run dev` and opening the browser lets users test approved knowledge only; RAG/harness management requires a separate MCP-capable client configured to launch `npm run mcp:rag-manager` with `cwd` pointing at this clone.
 - Never let an MCP write path skip `propose_source_insert` → human approval → `PENDING_REVIEW`. Nothing reaches `APPROVED` without an explicit `approve_chunk` call.
 - Never let a harness rule (`HarnessRule`) grant a capability the code doesn't already enforce. Hardcoded identity/read-only rules always render before and win over harness config — see [docs/rag.md](../docs/rag.md#the-harness-capabilities-and-restrictions). Keep `lib/rag/harness.ts`'s hardcoded blocklist; don't replace it with prompt-only guidance.
+- For personalization, do not add a project-owned `User` auth layer unless the user explicitly asks to build auth. Use generic knowledge scopes (`kind`, `label`, `externalRef`) so local profiles or external apps can map their own users/workspaces into RAG retrieval without breaking the MCP boundary.
 - Never add or restore domain-specific fields (e.g. legal/medical-only vocabulary) to the shared schema — use `category`/`domain`/`tags`/`metadata`.
 - Never deploy, push, or provision hosted infrastructure unless explicitly asked in the moment.
 - Never add server code, a build step, or a route to `public-site/`. It's the one thing meant to ever be deployed publicly, and its entire security guarantee is having nothing else to leak — see [Deployment](../docs/deployment.md#the-only-thing-meant-to-be-deployed-publicly-public-site).

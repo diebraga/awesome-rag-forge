@@ -31,6 +31,8 @@ Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (t
 
 The MCP server is allowed to create and manage the RAG knowledge base and harness through its supported tools. Database writes performed by these tools are normal MCP Operator Mode actions, including approval-gated writes and archival actions. Developer Mode is only for changing repository files, folder structure, Prisma schema files, dependencies, scripts, or application code. See [Operating Modes](operating-modes.md).
 
+When personalization is needed, MCP tools should target generic knowledge scopes rather than a built-in user table. A request like "add this to Maria" or "add this to user ID x" should resolve to a `KnowledgeScope` descriptor (`kind`, `label`, `externalRef`) and then use the normal proposal/approval/audience/visibility workflow. See [Scoped Knowledge](scoped-knowledge.md).
+
 ## Tools
 
 | Tool | Writes to DB? | Purpose |
