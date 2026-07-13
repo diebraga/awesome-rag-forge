@@ -2,13 +2,14 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, MessageCircleQuestion, Mic, SendHorizontal, ThumbsDown, ThumbsUp, User } from "lucide-react";
+import { Check, Copy, Download, MessageCircleQuestion, Mic, SendHorizontal, Square, ThumbsDown, ThumbsUp, User, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { testingFetch } from "@/lib/testing-api-client";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { describeSpeechRecognitionError, getSpeechTranscript, createSpeechRecognition, shouldRestartSpeechRecognition, type BrowserSpeechRecognizer } from "./speech-recognition";
+import { createSpeechUtterance } from "./speech-synthesis";
 import { getTypewriterStep, getTypewriterText } from "./typewriter";
 
 type ChatSource = {
@@ -123,6 +124,8 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const speechRecognitionRef = useRef<BrowserSpeechRecognizer | null>(null);
   const keepListeningRef = useRef(false);
@@ -230,6 +233,7 @@ export default function Home() {
       keepListeningRef.current = false;
       if (speechRestartTimerRef.current !== null) window.clearTimeout(speechRestartTimerRef.current);
       speechRecognitionRef.current?.abort();
+      window.speechSynthesis?.cancel();
     };
   }, []);
 
@@ -527,6 +531,32 @@ export default function Home() {
     }
   }
 
+  function toggleMessageSpeech(message: ChatMessage) {
+    setSpeechError(null);
+
+    if (speakingMessageId === message.id) {
+      window.speechSynthesis?.cancel();
+      setSpeakingMessageId(null);
+      return;
+    }
+
+    const speech = createSpeechUtterance(window as never, message.text);
+    if (!speech.supported) {
+      setSpeechError("Listening is not available in this browser.");
+      return;
+    }
+
+    speech.synthesis.cancel();
+    speech.utterance.onend = () => setSpeakingMessageId((current) => (current === message.id ? null : current));
+    speech.utterance.onerror = () => {
+      setSpeakingMessageId(null);
+      setSpeechError("Unable to read this response aloud.");
+    };
+
+    setSpeakingMessageId(message.id);
+    speech.synthesis.speak(speech.utterance);
+  }
+
   async function submitFeedback(message: ChatMessage, rating: FeedbackRating) {
     setFeedbackByMessage((current) => ({ ...current, [message.id]: rating }));
     try {
@@ -744,6 +774,9 @@ export default function Home() {
                         <button type="button" onClick={() => copyMessageText(message)} aria-label="Copy message" className="inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70">
                           {copiedMessageId === message.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                         </button>
+                        <button type="button" onClick={() => toggleMessageSpeech(message)} aria-label={speakingMessageId === message.id ? "Stop listening to response" : "Listen to response"} title={speakingMessageId === message.id ? "Stop listening" : "Listen to response"} className={speakingMessageId === message.id ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600" : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"}>
+                          {speakingMessageId === message.id ? <Square className="size-3.5" /> : <Volume2 className="size-3.5" />}
+                        </button>
                         <button type="button" onClick={() => submitFeedback(message, "GOOD")} aria-label="Good response" className={feedbackByMessage[message.id] === "GOOD" ? "inline-flex size-6 items-center justify-center rounded-full bg-blue-50 text-blue-600" : "inline-flex size-6 items-center justify-center rounded-full text-black/40 hover:bg-black/5 hover:text-black/70"}>
                           <ThumbsUp className="size-3.5" />
                         </button>
@@ -768,6 +801,7 @@ export default function Home() {
         </ScrollArea>
 
         {voiceError && <p className="shrink-0 text-xs text-black/50" role="status">{voiceError}</p>}
+        {speechError && <p className="shrink-0 text-xs text-black/50" role="status">{speechError}</p>}
 
         <form onSubmit={handleSubmit} className="flex min-h-[60px] w-full shrink-0 items-center gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
           <label className="sr-only" htmlFor="message">Message</label>
