@@ -45,6 +45,13 @@ Documents, collections, and eval cases share a generic metadata shape instead of
 - `tags` — a string array for flexible filtering.
 - `metadata` — a JSON field for anything else (e.g. `insertedBy`, `warnings`, custom attributes).
 
+Collections and documents also include governance fields:
+
+- `audience` — `EXTERNAL`, `INTERNAL`, or `RESTRICTED`.
+- `visibility` — a `RagVisibility[]` containing any of `CHAT`, `OPERATOR`, `REVIEW`, `EVAL`.
+
+End-user chat/read-only routes require both the collection and document to be `EXTERNAL` and include `CHAT`; MCP tools can manage all audiences.
+
 ### Review workflow
 
 `RagStatus` drives what the chat app is allowed to use:
@@ -55,7 +62,7 @@ DRAFT → PENDING_REVIEW → APPROVED
 APPROVED / REJECTED → ARCHIVED
 ```
 
-Only `APPROVED` documents and chunks are read by `lib/rag/retrieval.ts`. `HarnessRule` reuses this same `RagStatus` enum for its own review states, and only `APPROVED` rows are read by `lib/rag/chat-context.ts`.
+Only `APPROVED`, `EXTERNAL`, `CHAT`-visible documents and chunks are read by `lib/rag/retrieval.ts`. `HarnessRule` reuses this same `RagStatus` enum for its own review states, and only `APPROVED` rows scoped to `USER_CHAT` or `ALL` are read by `lib/rag/chat-context.ts`.
 
 The `APPROVED → ARCHIVED` transition is driven by the MCP server's `archive_document` tool (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)) — the only supported way to remove knowledge from use. It's a status change, not a row deletion: `RagReview`/`RagFeedback` history is preserved, and every read path already excludes non-`APPROVED` rows, so archiving is enough to make a document disappear from the chat, the Collections pages, and the download route without touching foreign-keyed audit data.
 

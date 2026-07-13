@@ -1,8 +1,8 @@
 # MCP Server
 
-The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the supported path for creating, organizing, correcting, archiving, and ingesting knowledge/harness changes. The Next.js chat app only reads `APPROVED` chunks; the separate local-only `/review` page can approve/reject pending chunks and harness rules directly from the database. See [System Architecture](architecture.md) for the full read/write boundary.
+The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the supported path for creating, organizing, correcting, archiving, and ingesting knowledge/harness changes. The Next.js chat app only reads approved external chat-visible chunks; the separate local-only `/review` page can approve/reject pending chunks and harness rules directly from the database. See [System Architecture](architecture.md) for the full read/write boundary.
 
-Opening the Next.js app in a browser does not connect this MCP server. The browser UI can test approved knowledge, browse approved collections/harness state, submit narrow answer feedback, and use local setup helpers, but it must not be treated as an MCP client. To create or manage RAG/harness data, connect an MCP-capable assistant to this server over stdio from the local clone.
+Opening the Next.js app in a browser does not connect this MCP server. The browser UI can test approved external chat-visible knowledge, browse approved external collections and user-chat harness state, submit narrow answer feedback, and use local setup helpers, but it must not be treated as an MCP client. To create or manage RAG/harness data, connect an MCP-capable assistant to this server over stdio from the local clone.
 
 After setup or registration, explain this boundary to the user with [Post-Install Handoff](post-install-handoff.md).
 
@@ -76,11 +76,13 @@ A proposal includes:
 - the recommended collection (existing or new)
 - the document title and source type
 - category / domain / tags
+- audience (`EXTERNAL`, `INTERNAL`, or `RESTRICTED`) and visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`)
 - the chunking plan
 - source/citation metadata
 - a `placementReview` recommendation (`CREATE_NEW_DOCUMENT`, `CREATE_RELATED_DOCUMENT`, `UPDATE_EXISTING_DOCUMENT`, or `DUPLICATE_SKIP`) with confidence, reasons, and likely existing-document candidates
 - a `reviewTriage` recommendation (`READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`) that explains review priority and the recommended human action
 - an explicit list of warnings (e.g. "no category or domain was provided")
+- `requiredUserQuestions`, including an audience choice when the user did not identify whether the knowledge is `EXTERNAL`, `INTERNAL`, or `RESTRICTED`
 
 ## Document attachments require storage configuration and approval
 
@@ -97,7 +99,7 @@ It also requires `userApproval: true` — it can modify an already-`APPROVED`, l
 For the common case of "here's a PDF, extract its knowledge and (maybe) keep the original for download," `propose_file_upload`/`approve_file_upload` combine what `propose_source_insert`/`approve_source_insert`/`attach_document_file` would otherwise require several separate calls to do:
 
 1. `propose_file_upload` — takes `fileName` and `fileBase64` (the whole file, base64-encoded; capped at ~15MB of raw file data since it round-trips through the calling model's context on both the propose and approve calls). It validates the `%PDF` magic bytes, extracts text page-by-page via [`mcp/rag-manager/extraction.ts`](../mcp/rag-manager/extraction.ts) (`pdf-parse`'s text layer first; any page with almost no extractable text — likely scanned/photographed — is rasterized and run through `tesseract.js` OCR instead), then builds a page-numbered chunk plan via `chunkPdfPages()` in [`chunking.ts`](../mcp/rag-manager/chunking.ts). Read-only: no database write, no storage upload. The proposal's warnings call out how many pages needed OCR, so a reviewer knows to double-check accuracy there.
-2. **Before calling `approve_file_upload`, the calling assistant must always ask the user to choose between two modes** — this is stated directly in `propose_file_upload`'s tool description and its `requiredUserQuestion`, not left to inference: extract text only (nothing enters the storage bucket, no storage configuration needed at all), or also store the original file for later download. Never assume one or the other, even if storage happens to be configured.
+2. **Before calling `approve_file_upload`, the calling assistant must always ask the user to choose between two modes** — this is stated directly in `propose_file_upload`'s tool description and its `requiredUserQuestions`, not left to inference: extract text only (nothing enters the storage bucket, no storage configuration needed at all), or also store the original file for later download. Never assume one or the other, even if storage happens to be configured.
 3. `approve_file_upload` — takes the same proposal back plus `fileName`/`fileBase64` again (the actual bytes have to be resupplied; the DB proposal alone doesn't carry binary data), the user's `storeOriginalFile` choice from step 2, and `userApproval: true`. When `storeOriginalFile: true` and storage is configured, it uploads the file under a generated key and sets `storageKey` on the document. When storage is not configured, it falls back to text-only storage and says so clearly instead of refusing the whole knowledge ingest. When `storeOriginalFile: false`, it skips storage entirely — no upload, `storageKey` stays `null`, and it works with no storage env vars configured at all. Either way, the collection/document/chunks/sources are created in one transaction, all `PENDING_REVIEW` until a human runs `approve_chunk` on the resulting chunks. The proposal and saved metadata include `reviewTriage`, so OCR warnings, storage fallbacks, duplicate/update candidates, and clean batch candidates are visible during review.
 
 Every `RagChunk`/`RagSource` created this way carries a `pageNumber`, so citations and future review UIs can point at the exact page rather than just the document as a whole. Extracted text is normalized before chunking: repeated whitespace is collapsed, soft line-break hyphenation is repaired, and paragraph boundaries are kept where possible. `RagDocument.metadata.fileStored` records which mode was used.
@@ -144,7 +146,7 @@ Harness rules (`HarnessRule`) describe what the read-only chat can and cannot do
 
 1. `propose_harness_update` — read-only. Runs the request through [`lib/rag/harness.ts`](../lib/rag/harness.ts)'s `validateHarnessStatement()`, a hardcoded check that refuses any `CAPABILITY` statement implying write/delete/approve/bypass/reveal-model powers, and any statement trying to remove a hardcoded protection. If it passes, returns a structured proposal; if not, returns a refusal with a reason. Never writes anything.
 2. `approve_harness_update` — writes the rule as `PENDING_REVIEW`, but only when `userApproval: true`, and **re-validates the statement again at write time** — it never trusts that step 1 was actually followed by whatever called it.
-3. `approve_harness_rule` / `reject_harness_rule` — a human reviewer makes the final call. Only `approve_harness_rule` moves a rule to `APPROVED`, at which point it appears in the system prompt of every connected agent on the next request.
+3. `approve_harness_rule` / `reject_harness_rule` — a human reviewer makes the final call. Only `approve_harness_rule` moves a rule to `APPROVED`, at which point it appears in the chat system prompt on the next request only if scoped to `USER_CHAT` or `ALL`. Operator/MCP-scoped rules remain management metadata and do not change the end-user chat.
 
 This means even a fully compromised or adversarial MCP client cannot grant the chat a capability it doesn't have: the blocklist is enforced in code at both the propose and write steps, independent of what the calling model claims or intends.
 

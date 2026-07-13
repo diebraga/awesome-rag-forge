@@ -8,6 +8,8 @@ import {
   feedbackRatingSchema,
   proposalSchema,
   type SourceProposal,
+  audienceSchema,
+  visibilitySchema,
   sourceTypeSchema,
   statusSchema,
   buildSourceProposal,
@@ -68,6 +70,7 @@ function textResult(text: string) {
 const reviewStatusSchema = z.enum(["PENDING", "APPROVED", "REJECTED"]);
 const feedbackQueueSchema = z.enum(["needs_review", "positive", "all"]);
 const feedbackSortSchema = z.enum(["newest", "oldest", "priority"]);
+const harnessScopeSchema = z.enum(["USER_CHAT", "OPERATOR_AGENT", "MCP_AGENT", "ALL"]);
 
 const NEGATIVE_FEEDBACK_RATINGS = ["BAD", "INCOMPLETE", "UNSAFE", "OUTDATED"] as const;
 const FEEDBACK_PREVIEW_LENGTH = 180;
@@ -87,6 +90,8 @@ async function analyzePdfUpload(input: {
   category?: string;
   domain?: string;
   tags?: string[];
+  audience?: z.infer<typeof audienceSchema>;
+  visibility?: Array<z.infer<typeof visibilitySchema>>;
   collectionId?: string;
 }): Promise<FileUploadProposalResult> {
   if (input.fileBase64.length > MAX_UPLOAD_BASE64_CHARS) {
@@ -110,6 +115,8 @@ async function analyzePdfUpload(input: {
     category: input.category,
     domain: input.domain,
     tags: input.tags,
+    audience: input.audience,
+    visibility: input.visibility,
     collectionId: input.collectionId,
   });
 
@@ -163,6 +170,8 @@ async function persistFileUpload(input: {
             category: proposal.proposedCollection.category,
             domain: proposal.proposedCollection.domain,
             tags: proposal.proposedCollection.tags,
+            audience: proposal.proposedCollection.audience,
+            visibility: proposal.proposedCollection.visibility,
           },
         })
       : await tx.ragCollection.findUniqueOrThrow({
@@ -177,6 +186,8 @@ async function persistFileUpload(input: {
         category: proposal.proposedDocument.category,
         domain: proposal.proposedDocument.domain,
         tags: proposal.proposedDocument.tags,
+        audience: proposal.proposedDocument.audience,
+        visibility: proposal.proposedDocument.visibility,
         status: "PENDING_REVIEW",
         storageKey,
         metadata: withContentFingerprint(
@@ -237,6 +248,8 @@ function collectionSignature(proposal: SourceProposal) {
     category: proposal.proposedCollection.category ?? null,
     domain: proposal.proposedCollection.domain ?? null,
     tags: proposal.proposedCollection.tags,
+    audience: proposal.proposedCollection.audience,
+    visibility: proposal.proposedCollection.visibility,
   });
 }
 
@@ -432,6 +445,8 @@ server.registerTool(
       category: z.string().optional(),
       domain: z.string().optional(),
       tags: z.array(z.string()).default([]),
+      audience: audienceSchema.default("EXTERNAL"),
+      visibility: z.array(visibilitySchema).default(["CHAT", "OPERATOR", "REVIEW"]),
       userApproval: z.boolean(),
     },
   },
@@ -537,7 +552,7 @@ server.registerTool(
   "propose_source_insert",
   {
     title: "Propose source insert",
-    description: "Analyze source text and propose where/how to store it, including duplicate/update/related-document placement review. This tool does not write to the database.",
+    description: "Analyze source text and propose where/how to store it, including audience (EXTERNAL end-user/shareable, INTERNAL operator/private, or RESTRICTED sensitive/high-risk), visibility, and duplicate/update/related-document placement review. This tool does not write to the database. If the user did not say what kind of knowledge it is, the calling assistant must ask them to choose or confirm the audience before saving.",
     inputSchema: {
       title: z.string().optional(),
       sourceText: z.string().min(1),
@@ -546,6 +561,8 @@ server.registerTool(
       category: z.string().optional(),
       domain: z.string().optional(),
       tags: z.array(z.string()).optional(),
+      audience: audienceSchema.optional(),
+      visibility: z.array(visibilitySchema).optional(),
       collectionId: z.string().optional(),
     },
   },
@@ -553,7 +570,10 @@ server.registerTool(
     const proposal = await buildSourceProposal(input);
     return jsonResult({
       proposal,
-      requiredUserQuestion: "Do you want me to save this to the knowledge base?",
+      requiredUserQuestions: [
+        ...proposal.requiredUserQuestions,
+        "Do you approve this collection, audience, visibility, and chunk organization, and do you want me to save it to the knowledge base?",
+      ],
       writesToDatabase: false,
     });
   },
@@ -583,6 +603,8 @@ server.registerTool(
               category: proposal.proposedCollection.category,
               domain: proposal.proposedCollection.domain,
               tags: proposal.proposedCollection.tags,
+              audience: proposal.proposedCollection.audience,
+              visibility: proposal.proposedCollection.visibility,
             },
           })
         : await tx.ragCollection.findUniqueOrThrow({
@@ -598,6 +620,8 @@ server.registerTool(
           category: proposal.proposedDocument.category,
           domain: proposal.proposedDocument.domain,
           tags: proposal.proposedDocument.tags,
+          audience: proposal.proposedDocument.audience,
+          visibility: proposal.proposedDocument.visibility,
           status: "PENDING_REVIEW",
           metadata: withContentFingerprint(
             {
@@ -659,7 +683,7 @@ server.registerTool(
   {
     title: "Propose file upload",
     description:
-      "Analyze an uploaded PDF file (base64-encoded) — extract its text with OCR fallback for scanned/image-only pages — and propose a document/chunk plan, including duplicate/update/related-document placement review. This tool does not write to the database and does not upload anything to storage. Before calling approve_file_upload, the calling assistant must ask the user to choose: (a) extract text only (nothing is stored in the bucket, no storage configuration needed), or (b) also store the original file for later download. Do not assume — always ask, every time a file is uploaded.",
+      "Analyze an uploaded PDF file (base64-encoded) — extract its text with OCR fallback for scanned/image-only pages — and propose a document/chunk plan, including audience (EXTERNAL end-user/shareable, INTERNAL operator/private, or RESTRICTED sensitive/high-risk), visibility, and duplicate/update/related-document placement review. This tool does not write to the database and does not upload anything to storage. If the user did not say what kind of knowledge it is, ask them to choose or confirm the audience before saving. Before calling approve_file_upload, the calling assistant must ask the user to approve the proposed organization and choose: (a) extract text only (nothing is stored in the bucket, no storage configuration needed), or (b) also store the original file for later download. Do not assume — always ask, every time a file is uploaded.",
     inputSchema: {
       fileName: z.string().min(1),
       fileBase64: z.string().min(1),
@@ -667,17 +691,21 @@ server.registerTool(
       category: z.string().optional(),
       domain: z.string().optional(),
       tags: z.array(z.string()).optional(),
+      audience: audienceSchema.optional(),
+      visibility: z.array(visibilitySchema).optional(),
       collectionId: z.string().optional(),
     },
   },
-  async ({ fileName, fileBase64, title, category, domain, tags, collectionId }) => {
+  async ({ fileName, fileBase64, title, category, domain, tags, audience, visibility, collectionId }) => {
     try {
-      const analyzed = await analyzePdfUpload({ fileName, fileBase64, title, category, domain, tags, collectionId });
+      const analyzed = await analyzePdfUpload({ fileName, fileBase64, title, category, domain, tags, audience, visibility, collectionId });
 
       return jsonResult({
         ...analyzed,
-        requiredUserQuestion:
-          "Do you want me to save this to the knowledge base? And should I also store the original file for download, or extract just the text (nothing kept in storage)?",
+        requiredUserQuestions: [
+          ...analyzed.proposal.requiredUserQuestions,
+          "Do you approve this collection, audience, visibility, and chunk organization? And should I also store the original file for download, or extract just the text (nothing kept in storage)?",
+        ],
         storageConfigured: isStorageConfigured(),
         writesToDatabase: false,
       });
@@ -692,7 +720,7 @@ server.registerTool(
   {
     title: "Propose multiple file uploads",
     description:
-      "Analyze multiple uploaded PDF files (base64-encoded), extract selectable text with OCR fallback for scanned/image-only pages, sanitize extracted text for efficient RAG chunking, and propose one document per PDF. This tool does not write to the database and does not upload anything to storage. The calling assistant should reason about whether files belong in a shared collection or separate collections based on user-provided context, categories, domains, tags, and file titles. Before calling approve_file_upload_batch, always ask the user to approve the organization and choose for each file or for the whole batch: extract text only, or also store original PDFs for later download.",
+      "Analyze multiple uploaded PDF files (base64-encoded), extract selectable text with OCR fallback for scanned/image-only pages, sanitize extracted text for efficient RAG chunking, and propose one document per PDF. This tool does not write to the database and does not upload anything to storage. The calling assistant should reason about collection placement, audience, visibility, categories, domains, tags, and file titles. If the user did not say what kind of knowledge the files contain, ask them to choose or confirm EXTERNAL, INTERNAL, or RESTRICTED before saving. Before calling approve_file_upload_batch, always ask the user to approve the organization and choose for each file or for the whole batch: extract text only, or also store original PDFs for later download.",
     inputSchema: {
       files: z.array(
         z.object({
@@ -702,6 +730,8 @@ server.registerTool(
           category: z.string().optional(),
           domain: z.string().optional(),
           tags: z.array(z.string()).optional(),
+          audience: audienceSchema.optional(),
+          visibility: z.array(visibilitySchema).optional(),
           collectionId: z.string().optional(),
         }),
       ).min(1),
@@ -719,8 +749,10 @@ server.registerTool(
         organizationRationale: batchOrganizationRationale(analyzed),
         recommendedOrganization:
           "Keep one document per PDF. Group documents into the same collection when the user context, category/domain/tags, or file titles indicate a shared subject; otherwise keep separate classifications for search precision.",
-        requiredUserQuestion:
-          "Do you approve this organization, and should I store the original PDFs for download or save extracted text only? You can choose once for the whole batch or per file.",
+        requiredUserQuestions: [
+          ...new Set(analyzed.flatMap((item) => item.proposal.requiredUserQuestions)),
+          "Do you approve this collection, audience, visibility, and chunk organization, and should I store the original PDFs for download or save extracted text only? You can choose once for the whole batch or per file.",
+        ],
         storageConfigured: isStorageConfigured(),
         writesToDatabase: false,
       });
@@ -1625,6 +1657,7 @@ Before proposing, critically evaluate the request:
       kind: harnessKindSchema,
       statement: z.string().min(1),
       reason: z.string().optional(),
+      scope: harnessScopeSchema.default("USER_CHAT"),
     },
   },
   async (input) => {
@@ -1650,18 +1683,19 @@ server.registerTool(
       kind: harnessKindSchema,
       statement: z.string().min(1),
       reason: z.string().optional(),
+      scope: harnessScopeSchema.default("USER_CHAT"),
       warnings: z.array(z.string()).default([]),
       userApproval: z.boolean(),
     },
   },
-  async ({ kind, statement, reason, warnings, userApproval }) => {
+  async ({ kind, statement, reason, scope, warnings, userApproval }) => {
     if (!userApproval) {
       return textResult("Refused to write. userApproval must be true before saving a harness rule.");
     }
 
     // Re-validate at write time too — never trust that the proposal step
     // was actually followed by whatever called this tool.
-    const revalidated = buildHarnessProposal({ kind, statement, reason });
+    const revalidated = buildHarnessProposal({ kind, statement, reason, scope });
     if ("refused" in revalidated) {
       return textResult(`Refused to write: ${revalidated.reason}`);
     }
@@ -1670,6 +1704,7 @@ server.registerTool(
       data: {
         kind,
         statement: revalidated.statement,
+        scope: revalidated.scope,
         reason: revalidated.reason,
         warnings: [...revalidated.warnings, ...warnings],
         status: "PENDING_REVIEW",

@@ -2,7 +2,7 @@
 
 Every route below is part of the web testing surface and is enabled only when `ENABLE_TESTING_SURFACE=true`. When the flag is missing or false, the pages show a disabled-mode message and these API routes return `404` JSON before doing any work. See [Testing Surface](testing-surface.md).
 
-Every route below is **read-only** except `POST /api/feedback`, which is a single, deliberately narrow exception — it can create a `RagFeedback` row and nothing else. See [System Architecture](architecture.md) for the enforced read/write boundary and why that one route exists.
+Every route below is **read-only** except `POST /api/feedback`, which is a single, deliberately narrow exception — it can create a `RagFeedback` row and nothing else. See [System Architecture](architecture.md) for the enforced read/write boundary and why that one route exists. Read-only RAG routes expose only approved external knowledge with `CHAT` visibility; operational/internal/restricted review work remains outside the client surface.
 
 Surface split: `/api/chat`, `/api/rag/context`, `/api/rag/collections*`, `/api/rag/documents/[id]/download`, and `/api/rag/harness` are intentionally kept because the testing UI and trusted external chat integrations need approved context, browsable approved knowledge, source downloads, and approved harness visibility. `/api/ollama/*` is also intentionally kept, but only as local testing setup support for starting Ollama, checking local model availability, and pulling allowlisted models. None of these routes can create, approve, edit, archive, or delete RAG knowledge or harness rules; those workflows remain MCP-only.
 
@@ -121,13 +121,15 @@ Read-only, `APPROVED`-only list of collections for the [Collections page](#the-c
       "domain": "product",
       "tags": ["seed", "docs"],
       "approvedDocumentCount": 1,
-      "approvedChunkCount": 3
+      "approvedChunkCount": 3,
+      "audience": "EXTERNAL",
+      "visibility": ["CHAT", "OPERATOR", "REVIEW"]
     }
   ]
 }
 ```
 
-`approvedChunkCount` is a rough "how much is actually in here" signal, since a document can be `APPROVED` while some of its chunks aren't.
+`approvedChunkCount` is a rough "how much is actually in here" signal, since a document can be `APPROVED` while some of its chunks aren't. Results are paginated with `page` and `pageSize` query params, and the response includes `totalCollections`/`totalPages`.
 
 See `lib/rag/collections.ts` and `app/api/rag/collections/route.ts`.
 
@@ -153,7 +155,7 @@ Returns `404` if the collection doesn't exist. See `lib/rag/collections.ts` and 
 
 ### The Collections pages
 
-`app/collections/page.tsx` (a plain list) and `app/collections/[collectionId]/page.tsx` (paginated documents, expandable to their chunks) are part of the same read-only, end-user-facing surface as the chat — same `APPROVED`-only visibility, no write path. Showing collection/document names here is a **deliberate, explicit feature**, not a contradiction of the chat's restriction against narrating its own structure in conversation: that restriction governs the chat's natural-language behavior (`lib/rag/chat-context.ts`), not this dedicated browsing view. See [System Architecture](architecture.md#two-audiences-kept-apart-on-purpose) and [Security Considerations](security.md).
+`app/collections/page.tsx` (a plain list) and `app/collections/[collectionId]/page.tsx` (paginated documents, expandable to their chunks) are part of the same read-only, end-user-facing surface as the chat — same `APPROVED`, `EXTERNAL`, `CHAT`-visible boundary, no write path. Showing collection/document names here is a **deliberate, explicit feature**, not a contradiction of the chat's restriction against narrating its own structure in conversation: that restriction governs the chat's natural-language behavior (`lib/rag/chat-context.ts`), not this dedicated browsing view. See [System Architecture](architecture.md#two-audiences-kept-apart-on-purpose) and [Security Considerations](security.md).
 
 There is intentionally no graph/visualization layer here — an earlier version rendered collections as a node graph (`@xyflow/react`), but with a small number of collections a plain list is clearer and has no dependency to maintain. If the knowledge base grows enough that a visual overview becomes useful again, revisit that decision rather than assuming a list won't scale.
 
@@ -175,7 +177,7 @@ See `lib/rag/chat-context.ts` (`getAssistantConfig`), `lib/rag/harness.ts` (`get
 
 ### The Harness page
 
-`app/harness/page.tsx` shows the same identity and `APPROVED` capabilities/restrictions that are baked into the chat's system prompt — as a simple list, since there's nothing structural to visualize here. Same audience and visibility rules as the chat and the Collections pages: read-only, `APPROVED`-only. Changing any of this starts through the MCP server's `propose_harness_update` → `approve_harness_update` flow (see [MCP Server](mcp-server.md#harness-rules-propose--approve--review)); final pending approval/rejection can happen through MCP or the guarded local `/review` page. Nothing on the Harness page itself is editable.
+`app/harness/page.tsx` shows the same identity and `APPROVED` capabilities/restrictions that are baked into the chat's system prompt — as a simple list, since there's nothing structural to visualize here. Same audience and visibility rules as the chat and the Collections pages: read-only, `APPROVED`-only, external/`CHAT` visible. Changing any of this starts through the MCP server's `propose_harness_update` → `approve_harness_update` flow (see [MCP Server](mcp-server.md#harness-rules-propose--approve--review)); final pending approval/rejection can happen through MCP or the guarded local `/review` page. Nothing on the Harness page itself is editable.
 
 ## `GET /api/ollama/status`
 

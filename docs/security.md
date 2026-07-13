@@ -47,7 +47,7 @@ Both `lib/prisma.ts` and `mcp/rag-manager/prisma.ts` are server-only. Never impo
 
 Original file storage is refused unless `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, and `STORAGE_SECRET_ACCESS_KEY` are all set (see `lib/storage.ts`). This prevents silently writing original files to an unconfigured or default location. Extracted PDF text may still be stored in the database without storage configured; `approve_file_upload` and `approve_file_upload_batch` fall back to text-only storage when `storeOriginalFile: true` but storage is missing. `attach_document_file` still refuses outright because its only purpose is attaching an original file.
 
-The bucket itself should be kept private (no public-read policy). `lib/storage.ts`'s `getDownloadUrl()` generates a presigned `GetObject` URL that expires after 5 minutes, and `GET /api/rag/documents/[id]/download` is the only code path that calls it — gated to `status: APPROVED` documents with a non-null `storageKey`, same as every other read in `app/`. Never add a route or tool that returns a longer-lived or unauthenticated direct bucket URL; always go through `getDownloadUrl()` so the expiry and the APPROVED-only gate stay in one place.
+The bucket itself should be kept private (no public-read policy). `lib/storage.ts`'s `getDownloadUrl()` generates a presigned `GetObject` URL that expires after 5 minutes, and `GET /api/rag/documents/[id]/download` is the only code path that calls it — gated to approved external chat-visible documents with a non-null `storageKey`, same as every other end-user read in `app/`. Never add a route or tool that returns a longer-lived or unauthenticated direct bucket URL; always go through `getDownloadUrl()` so the expiry and the APPROVED-only gate stay in one place.
 
 ## MCP server trust boundary
 
@@ -120,7 +120,7 @@ The spec still only describes API shape — paths, request/response schemas, and
 
 ### OpenAPI surface boundary
 
-Only document the testing/client HTTP surface in Swagger: chat, feedback capture, approved read-only context/collections/harness display, document downloads, and local Ollama setup helper routes. Keep `/api/rag/harness` documented because the testing UI reads the approved assistant identity/capabilities/restrictions from it. Keep `/api/ollama/*` documented because local users need setup controls, but describe them as local testing helpers, not production client integrations. Do not add MCP-only workflows to OpenAPI: knowledge creation/update/archive, harness proposal/review, feedback review/resolution, eval creation, or anything that exposes drafts/rejected records/all statuses.
+Only document the testing/client HTTP surface in Swagger: chat, feedback capture, approved external chat-visible read-only context/collections, user-chat harness display, document downloads, and local Ollama setup helper routes. Keep `/api/rag/harness` documented because the testing UI reads the approved assistant identity/capabilities/restrictions from it. Keep `/api/ollama/*` documented because local users need setup controls, but describe them as local testing helpers, not production client integrations. Do not add MCP-only workflows to OpenAPI: knowledge creation/update/archive, harness proposal/review, feedback review/resolution, eval creation, or anything that exposes drafts/rejected records/all statuses.
 
 ## `POST /api/ollama/start` executes a process — scoped deliberately
 

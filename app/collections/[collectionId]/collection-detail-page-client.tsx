@@ -1,11 +1,15 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import { ChevronLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { AudienceBadge, VisibilityBadges } from "@/components/knowledge-boundary-badges";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { testingFetch } from "@/lib/testing-api-client";
+
 type CollectionDetailChunk = {
   id: string;
   chunkText: string;
@@ -19,6 +23,8 @@ type CollectionDetailDocument = {
   category: string | null;
   domain: string | null;
   tags: string[];
+  audience: string;
+  visibility: string[];
   sourceType: string;
   chunks: CollectionDetailChunk[];
 };
@@ -33,6 +39,8 @@ type CollectionDetailResponse = {
     category: string | null;
     domain: string | null;
     tags: string[];
+    audience: string;
+    visibility: string[];
   };
   documents?: CollectionDetailDocument[];
   page?: number;
@@ -40,6 +48,32 @@ type CollectionDetailResponse = {
   totalDocuments?: number;
   totalPages?: number;
 };
+
+async function fetchCollectionDetail(url: string): Promise<CollectionDetailResponse> {
+  const response = await testingFetch(url);
+  return response.json();
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-1/2" />
+        <div className="flex gap-1.5">
+          <Skeleton className="h-5 w-16 rounded-full" />
+          <Skeleton className="h-5 w-20 rounded-full" />
+        </div>
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-xl border border-black/10 px-4 py-3">
+          <Skeleton className="h-4 w-2/5" />
+          <Skeleton className="mt-2 h-3 w-1/3" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function DocumentCard({ document }: { document: CollectionDetailDocument }) {
   const [expanded, setExpanded] = useState(false);
@@ -53,6 +87,10 @@ function DocumentCard({ document }: { document: CollectionDetailDocument }) {
       >
         <div className="min-w-0 space-y-0.5">
           <p className="truncate text-sm font-medium text-black">{document.title}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <AudienceBadge audience={document.audience} />
+            <VisibilityBadges visibility={document.visibility} />
+          </div>
           <p className="truncate text-xs text-black/50">
             {[document.category, document.domain].filter(Boolean).join(" · ") ||
               document.sourceType}
@@ -94,37 +132,13 @@ export default function CollectionDetailPage({
 }) {
   const { collectionId } = use(params);
   const [page, setPage] = useState(1);
-  const requestKey = `${collectionId}:${page}`;
-  const [result, setResult] = useState<{ key: string; data: CollectionDetailResponse } | null>(
-    null,
+  const pageSize = 10;
+  const { data, error, isLoading, isValidating } = useSWR(
+    `/api/rag/collections/${collectionId}?page=${page}&pageSize=${pageSize}`,
+    fetchCollectionDetail,
+    { keepPreviousData: true },
   );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    testingFetch(`/api/rag/collections/${collectionId}?page=${page}&pageSize=10`)
-      .then((response) => response.json())
-      .then((json: CollectionDetailResponse) => {
-        if (cancelled) return;
-        setResult({ key: `${collectionId}:${page}`, data: json });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setResult({ key: `${collectionId}:${page}`, data: { ok: false, error: "Unable to reach the server." } });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [collectionId, page]);
-
-  const isCurrent = result?.key === requestKey;
-  const data = isCurrent ? result.data : null;
-  const status: "loading" | "ready" | "error" = !isCurrent
-    ? "loading"
-    : data?.ok
-      ? "ready"
-      : "error";
+  const status: "loading" | "ready" | "error" = isLoading && !data ? "loading" : data?.ok ? "ready" : "error";
 
   return (
     <main className="flex h-full flex-col overflow-y-auto bg-white px-4 py-6 text-black">
@@ -137,21 +151,28 @@ export default function CollectionDetailPage({
           Collections
         </Link>
 
-        {status === "loading" && (
-          <p className="text-sm text-black/50">Loading...</p>
-        )}
+        {status === "loading" && <DetailSkeleton />}
         {status === "error" && (
           <p className="text-sm text-black/50">
-            {data?.error ?? "Unable to load this collection."}
+            {data?.error ?? (error ? "Unable to reach the server." : "Unable to load this collection.")}
           </p>
         )}
 
         {status === "ready" && data?.collection && (
           <>
             <header className="space-y-1.5">
-              <h1 className="text-xl font-semibold tracking-tight text-black">
-                {data.collection.name}
-              </h1>
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <h1 className="text-xl font-semibold tracking-tight text-black">
+                  {data.collection.name}
+                </h1>
+                {isValidating && !isLoading && (
+                  <span className="text-xs text-black/40">Refreshing...</span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <AudienceBadge audience={data.collection.audience} />
+                <VisibilityBadges visibility={data.collection.visibility} />
+              </div>
               {data.collection.description && (
                 <p className="text-sm leading-6 text-black/60">{data.collection.description}</p>
               )}

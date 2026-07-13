@@ -52,6 +52,7 @@ Current status: early local-first project. The MCP server can manage RAG knowled
 - **Review triage**: new knowledge is saved as `PENDING_REVIEW` with advisory buckets such as `READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, and `DUPLICATE_OR_UPDATE_CANDIDATE`; none of those buckets bypass human approval.
 - **Read-only testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready.
 - **Human approval boundary**: knowledge and harness changes go through proposal/review flows before affecting the chat.
+- **Audience and visibility controls**: collections and documents carry an audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); the chat and read-only UI only see approved external knowledge marked `CHAT`.
 - **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
 - **PDF ingestion**: MCP upload tools extract selectable text, fall back to OCR, clean text for LLM use, and optionally store original files in S3-compatible storage.
 - **Generated OpenAPI docs**: Swagger/OpenAPI is generated from route annotations and gated behind the same local testing readiness checks.
@@ -80,6 +81,8 @@ flowchart LR
 ```
 
 The important boundary: HTTP routes can read approved state and record narrow answer feedback. MCP tools are the only path for creating, approving, archiving, or resolving operational knowledge workflows.
+
+Visibility labels describe use contexts (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`), not whether the MCP server can physically see a row. MCP tool access is governed by the tool's purpose, operating mode, and approval rules. If a user asks to add knowledge but does not say what kind it is, the assistant must ask them to choose `EXTERNAL`, `INTERNAL`, or `RESTRICTED` before saving.
 
 ## Technology Stack
 

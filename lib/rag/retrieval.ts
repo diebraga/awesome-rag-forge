@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { embedTextWithOllama, formatPgVectorLiteral } from "@/lib/rag/embeddings";
+import { buildApprovedChatChunkWhere } from "@/lib/rag/visibility";
 
 export type RagCitation = {
   documentId: string;
@@ -20,12 +21,16 @@ export type RagContextChunk = {
     category: string | null;
     domain: string | null;
     tags: string[];
+    audience: string;
+    visibility: string[];
     storageKey: string | null;
     collection?: {
       name: string;
       category: string | null;
       domain: string | null;
       tags: string[];
+      audience: string;
+      visibility: string[];
     };
   };
   sources: Array<{
@@ -238,10 +243,7 @@ async function fetchCandidateChunks(query?: string): Promise<RagContextChunk[]> 
   const queryWhere = buildSearchWhere(query);
   const chunks = await prisma.ragChunk.findMany({
     where: {
-      status: "APPROVED",
-      document: {
-        status: "APPROVED",
-      },
+      ...buildApprovedChatChunkWhere(),
       ...(queryWhere ?? {}),
     },
     select: {
@@ -257,6 +259,8 @@ async function fetchCandidateChunks(query?: string): Promise<RagContextChunk[]> 
           category: true,
           domain: true,
           tags: true,
+          audience: true,
+          visibility: true,
           storageKey: true,
           collection: {
             select: {
@@ -264,6 +268,8 @@ async function fetchCandidateChunks(query?: string): Promise<RagContextChunk[]> 
               category: true,
               domain: true,
               tags: true,
+              audience: true,
+              visibility: true,
             },
           },
         },
@@ -300,8 +306,13 @@ async function fetchSemanticChunkIds(query?: string): Promise<string[]> {
       `SELECT c."id", c."embedding" <=> $1::vector AS distance
        FROM "RagChunk" c
        JOIN "RagDocument" d ON d."id" = c."documentId"
+       JOIN "RagCollection" col ON col."id" = d."collectionId"
        WHERE c."status" = 'APPROVED'
          AND d."status" = 'APPROVED'
+         AND d."audience" = 'EXTERNAL'::"RagAudience"
+         AND 'CHAT'::"RagVisibility" = ANY(d."visibility")
+         AND col."audience" = 'EXTERNAL'::"RagAudience"
+         AND 'CHAT'::"RagVisibility" = ANY(col."visibility")
          AND c."embedding" IS NOT NULL
        ORDER BY c."embedding" <=> $1::vector
        LIMIT $2`,
@@ -320,8 +331,7 @@ async function fetchChunksByIds(ids: string[]): Promise<RagContextChunk[]> {
   const chunks = await prisma.ragChunk.findMany({
     where: {
       id: { in: ids },
-      status: "APPROVED",
-      document: { status: "APPROVED" },
+      ...buildApprovedChatChunkWhere(),
     },
     select: {
       id: true,
@@ -336,8 +346,10 @@ async function fetchChunksByIds(ids: string[]): Promise<RagContextChunk[]> {
           category: true,
           domain: true,
           tags: true,
+          audience: true,
+          visibility: true,
           storageKey: true,
-          collection: { select: { name: true, category: true, domain: true, tags: true } },
+          collection: { select: { name: true, category: true, domain: true, tags: true, audience: true, visibility: true } },
         },
       },
       sources: { select: { label: true, citationText: true } },

@@ -16,8 +16,8 @@ app/
   api/chat/route.ts        Chat endpoint: calls Ollama with the full assistant context
   api/rag/route.ts         Debug endpoint: returns the current approved RAG context
   api/rag/context/route.ts  Full awareness bundle for external agents (identity, harness, stats, context)
-  api/rag/collections/route.ts  Read-only, APPROVED-only collection list for the Collections page
-  api/rag/collections/[collectionId]/route.ts  Read-only, APPROVED-only, paginated collection detail
+  api/rag/collections/route.ts  Read-only approved external chat-visible collection list for the Collections page
+  api/rag/collections/[collectionId]/route.ts  Read-only approved external chat-visible paginated collection detail
   api/rag/harness/route.ts   Read-only identity + APPROVED capabilities/restrictions for the Harness page
   api/ollama/status/route.ts Checks whether Ollama is reachable and the model is pulled
   api/ollama/start/route.ts  Local-only: starts Ollama for the "Connect" button
@@ -37,7 +37,7 @@ lib/
                               data access only, used identically by the chat
                               and the MCP server, so rules can't drift
     collections.ts              listApprovedCollections() / getCollectionDetail() — read-only,
-                              APPROVED-only data for the Collections pages. The
+                              approved external chat-visible data for the Collections pages. The
                               Harness page reuses getAssistantConfig() (chat-context.ts)
                               and getApprovedHarnessRules() (harness.ts) directly instead.
     chunk-embeddings.ts          embedChunkForApproval()/storeChunkEmbedding() — shared between

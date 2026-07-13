@@ -5,17 +5,17 @@ import { prisma } from "@/lib/prisma";
 import { getDownloadUrl } from "@/lib/storage";
 
 /**
- * Read-only, APPROVED-only document download. Redirects to a short-lived
+ * Read-only APPROVED, EXTERNAL, CHAT-visible document download. Redirects to a short-lived
  * presigned URL rather than proxying bytes — the bucket stays private, and
  * this route never reads DRAFT/PENDING_REVIEW/REJECTED documents' files,
- * matching every other route's APPROVED-only visibility rule.
+ * matching every other route's approved external chat-visible rule.
  */
 /**
  * @swagger
  * /api/rag/documents/{id}/download:
  *   get:
  *     summary: Download an approved document's stored original file
- *     description: Requires the document to be status APPROVED with a non-null storageKey. Redirects to a short-lived presigned URL by default, or returns it as JSON with ?format=json.
+ *     description: Requires the document to be status APPROVED, audience EXTERNAL, visibility CHAT, inside an external chat-visible collection, with a non-null storageKey. Redirects to a short-lived presigned URL by default, or returns it as JSON with ?format=json.
  *     tags: [Documents]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -51,12 +51,18 @@ export async function GET(
 
   try {
     const { id } = await params;
-    const document = await prisma.ragDocument.findUnique({
-      where: { id },
-      select: { status: true, storageKey: true },
+    const document = await prisma.ragDocument.findFirst({
+      where: {
+        id,
+        status: "APPROVED",
+        audience: "EXTERNAL",
+        visibility: { has: "CHAT" },
+        collection: { audience: "EXTERNAL", visibility: { has: "CHAT" } },
+      },
+      select: { storageKey: true },
     });
 
-    if (!document || document.status !== "APPROVED" || !document.storageKey) {
+    if (!document || !document.storageKey) {
       return NextResponse.json(
         { ok: false, error: "No downloadable file found for this document." },
         { status: 404 },

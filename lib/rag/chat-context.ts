@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getRagContext, type RagCitation } from "@/lib/rag/retrieval";
+import { buildApprovedChatChunkWhere } from "@/lib/rag/visibility";
 import { getApprovedHarnessRules } from "@/lib/rag/harness";
 
 /**
@@ -72,10 +73,18 @@ export async function getAssistantConfig() {
 export async function getKnowledgeBaseStats(): Promise<KnowledgeBaseStats> {
   const [collectionCount, documentCount, approvedChunkCount, collections] =
     await Promise.all([
-      prisma.ragCollection.count(),
-      prisma.ragDocument.count(),
-      prisma.ragChunk.count({ where: { status: "APPROVED" } }),
+      prisma.ragCollection.count({ where: { audience: "EXTERNAL", visibility: { has: "CHAT" } } }),
+      prisma.ragDocument.count({
+        where: {
+          status: "APPROVED",
+          audience: "EXTERNAL",
+          visibility: { has: "CHAT" },
+          collection: { audience: "EXTERNAL", visibility: { has: "CHAT" } },
+        },
+      }),
+      prisma.ragChunk.count({ where: { ...buildApprovedChatChunkWhere() } }),
       prisma.ragCollection.findMany({
+        where: { audience: "EXTERNAL", visibility: { has: "CHAT" } },
         select: { category: true, domain: true, tags: true },
       }),
     ]);

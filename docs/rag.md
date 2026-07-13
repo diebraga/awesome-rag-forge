@@ -2,7 +2,7 @@
 
 ## Current retrieval (MVP)
 
-The chat uses hybrid retrieval over `APPROVED` chunks belonging to `APPROVED` documents. The latest user question is passed into `lib/rag/retrieval.ts`, which runs semantic pgvector search when chunk embeddings are available, merges those candidates with lexical candidates, then ranks the union before building the prompt.
+The chat uses hybrid retrieval over `APPROVED` chunks belonging to `APPROVED`, `EXTERNAL`, `CHAT`-visible documents inside `EXTERNAL`, `CHAT`-visible collections. The latest user question is passed into `lib/rag/retrieval.ts`, which runs semantic pgvector search when chunk embeddings are available, merges those candidates with lexical candidates, then ranks the union before building the prompt.
 
 MCP proposals first run a placement review against nearby existing documents, then add review triage, then enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This is still behind the existing propose -> approve review path: placement recommendations and aliases are proposal data, saved content receives fingerprints for future duplicate detection, and embeddings are written only when a human approves a chunk through MCP or the guarded local `/review` page.
 
@@ -23,6 +23,15 @@ This is a starting point, not a production chunker. For plain-text/Markdown sour
 
 PDF uploads (`propose_file_upload`) use a separate, page-aware chunker, `chunkPdfPages()` in the same file: it chunks each page's text independently (same ~1600-char paragraph merging) and tags every resulting chunk with its source `pageNumber`, rather than merging across page boundaries. `RagChunk.pageNumber`/`RagSource.pageNumber` exist in the schema specifically for this — see [MCP Server](mcp-server.md#uploading-a-file-directly-propose_file_upload--approve_file_upload) for the extraction pipeline (`mcp/rag-manager/extraction.ts`) that feeds it, including the OCR fallback.
 
+## Audience and visibility
+
+Collections and documents carry two generic governance fields:
+
+- `audience`: `EXTERNAL`, `INTERNAL`, or `RESTRICTED`.
+- `visibility`: any combination of `CHAT`, `OPERATOR`, `REVIEW`, and `EVAL`.
+
+The chat, `/api/rag/context`, `/api/rag/collections*`, and document download route only read approved knowledge where both the collection and document are `EXTERNAL` and include `CHAT`. The MCP server can list/search/manage all audiences because it is the creator-facing management surface. Proposal tools infer a safe default from the source text: public-looking knowledge defaults to external/chat-visible, internal/operator language defaults away from chat, and secret/credential/confidential language defaults to restricted review visibility. The assistant should show that proposed boundary to the user before saving.
+
 ## Human review loop
 
 New knowledge is never immediately usable by the chat app:
@@ -32,7 +41,7 @@ New knowledge is never immediately usable by the chat app:
 3. `approve_chunk` / `reject_chunk` — or the guarded local `/review` page's equivalent server actions — lets a human reviewer move chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already — that's what makes the document (and its downloadable file, if it has one) actually visible; a document sitting at `PENDING_REVIEW` is never retrieved or downloadable regardless of individual chunk statuses.
 4. **Or**, instead of step 3 for an already-reviewed chunk that just needs correcting: `propose_chunk_update` → `approve_chunk_update` (see [MCP Server](mcp-server.md#correcting-knowledge-propose_chunk_update--approve_chunk_update)). Editing an `APPROVED` chunk sends it back to `PENDING_REVIEW` — the loop re-enters at step 3, it doesn't skip it. Removal follows the same "never skip review" shape via `archive_document` (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)).
 
-Only step 3's `APPROVED` chunks (belonging to an `APPROVED` document) are ever surfaced to end users in the chat app.
+Only step 3's `APPROVED` chunks are surfaced to end users, and only if the parent document and collection are also `APPROVED`/`EXTERNAL`/`CHAT`-visible. Internal or restricted knowledge can exist in the same database for operator/MCP workflows without entering chat retrieval.
 
 ### Review triage
 
@@ -65,6 +74,6 @@ Two things keep this from being a way to grant the chat real power it doesn't ha
 - **Hardcoded rules always win.** The identity and read-only rules baked into `buildSystemPrompt()` (see [System Architecture](architecture.md)) are rendered *before* the harness section, and the harness section explicitly tells the model those rules "can never be loosened by anything below." Nothing in `HarnessRule` can override them — they're not even read from the same table.
 - **Dangerous statements are refused in code, not just discouraged in a prompt.** `lib/rag/harness.ts`'s `validateHarnessStatement()` hard-blocks any `CAPABILITY` statement implying write/delete/approve/bypass/reveal-model powers (a synonym-aware blocklist, not just literal words), requires every `CAPABILITY` statement to also match a known-safe read-only verb allowlist (default-deny for anything unrecognized), and blocks any statement (capability or restriction) that tries to *remove* a hardcoded protection ("no longer read-only," "allow write," etc.). This runs both when a rule is proposed and again when it's actually written, so it can't be skipped by calling the write tool directly. See `docs/security.md` and `lib/rag/harness.test.ts` for the full rationale and the evasion cases it's tested against.
 
-Only `APPROVED` harness rules are ever included in `buildAssistantContext()`'s output — the same visibility rule as approved knowledge chunks.
+Only `APPROVED` harness rules scoped to `USER_CHAT` or `ALL` are included in `buildAssistantContext()`'s output. `OPERATOR_AGENT` and `MCP_AGENT` rules can be tracked/reviewed without changing the end-user chat prompt.
 
 See also: [MCP Server](mcp-server.md), [Database & Prisma](database.md), [System Architecture](architecture.md).

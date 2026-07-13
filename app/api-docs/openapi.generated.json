@@ -72,6 +72,27 @@
             "bearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 8
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Harness configuration retrieved"
@@ -91,7 +112,7 @@
     "/api/rag/documents/{id}/download": {
       "get": {
         "summary": "Download an approved document's stored original file",
-        "description": "Requires the document to be status APPROVED with a non-null storageKey. Redirects to a short-lived presigned URL by default, or returns it as JSON with ?format=json.",
+        "description": "Requires the document to be status APPROVED, audience EXTERNAL, visibility CHAT, inside an external chat-visible collection, with a non-null storageKey. Redirects to a short-lived presigned URL by default, or returns it as JSON with ?format=json.",
         "tags": [
           "Documents"
         ],
@@ -188,6 +209,27 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
           }
         ],
         "responses": {

@@ -4,7 +4,7 @@ import { routeErrorResponse } from "@/lib/api-errors";
 import { getCollectionDetail } from "@/lib/rag/collections";
 
 /**
- * Read-only, APPROVED-only, paginated detail for one collection — backs
+ * Read-only, APPROVED, EXTERNAL, CHAT-visible paginated detail for one collection — backs
  * the collection detail page. Same visibility as the chat — see
  * lib/rag/collections.ts.
  */

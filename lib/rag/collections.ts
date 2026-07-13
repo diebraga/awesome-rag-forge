@@ -25,17 +25,37 @@ export type CollectionSummary = {
   category: string | null;
   domain: string | null;
   tags: string[];
+  audience: string;
+  visibility: string[];
   approvedDocumentCount: number;
   approvedChunkCount: number;
 };
 
-export async function listApprovedCollections(): Promise<CollectionSummary[]> {
-  const collections = await prisma.ragCollection.findMany({
-    where: {
-      documents: {
-        some: { status: "APPROVED" },
+export async function listApprovedCollections(page = 1, pageSize = DEFAULT_PAGE_SIZE): Promise<{
+  collections: CollectionSummary[];
+  page: number;
+  pageSize: number;
+  totalCollections: number;
+  totalPages: number;
+}> {
+  const safePage = Math.max(1, page);
+  const safePageSize = Math.min(Math.max(1, pageSize), 50);
+  const where = {
+    audience: "EXTERNAL" as const,
+    visibility: { has: "CHAT" as const },
+    documents: {
+      some: {
+        status: "APPROVED" as const,
+        audience: "EXTERNAL" as const,
+        visibility: { has: "CHAT" as const },
       },
     },
+  };
+
+  const [totalCollections, collections] = await Promise.all([
+    prisma.ragCollection.count({ where }),
+    prisma.ragCollection.findMany({
+    where,
     select: {
       id: true,
       name: true,
@@ -43,8 +63,10 @@ export async function listApprovedCollections(): Promise<CollectionSummary[]> {
       category: true,
       domain: true,
       tags: true,
+      audience: true,
+      visibility: true,
       documents: {
-        where: { status: "APPROVED" },
+        where: { status: "APPROVED", audience: "EXTERNAL", visibility: { has: "CHAT" } },
         select: {
           chunks: {
             where: { status: "APPROVED" },
@@ -54,21 +76,32 @@ export async function listApprovedCollections(): Promise<CollectionSummary[]> {
       },
     },
     orderBy: { name: "asc" },
-  });
+    skip: (safePage - 1) * safePageSize,
+    take: safePageSize,
+  }),
+  ]);
 
-  return collections.map((collection) => ({
+  return {
+    collections: collections.map((collection) => ({
     id: collection.id,
     name: collection.name,
     description: collection.description,
     category: collection.category,
     domain: collection.domain,
     tags: collection.tags,
+    audience: collection.audience,
+    visibility: collection.visibility,
     approvedDocumentCount: collection.documents.length,
     approvedChunkCount: collection.documents.reduce(
       (sum, document) => sum + document.chunks.length,
       0,
     ),
-  }));
+  })),
+    page: safePage,
+    pageSize: safePageSize,
+    totalCollections,
+    totalPages: Math.max(1, Math.ceil(totalCollections / safePageSize)),
+  };
 }
 
 export type CollectionDetailChunk = {
@@ -84,6 +117,8 @@ export type CollectionDetailDocument = {
   category: string | null;
   domain: string | null;
   tags: string[];
+  audience: string;
+  visibility: string[];
   sourceType: string;
   chunks: CollectionDetailChunk[];
 };
@@ -96,6 +131,8 @@ export type CollectionDetail = {
     category: string | null;
     domain: string | null;
     tags: string[];
+    audience: string;
+    visibility: string[];
   };
   documents: CollectionDetailDocument[];
   page: number;
@@ -112,8 +149,12 @@ export async function getCollectionDetail(
   const safePage = Math.max(1, page);
   const safePageSize = Math.min(Math.max(1, pageSize), 50);
 
-  const collection = await prisma.ragCollection.findUnique({
-    where: { id: collectionId },
+  const collection = await prisma.ragCollection.findFirst({
+    where: {
+      id: collectionId,
+      audience: "EXTERNAL",
+      visibility: { has: "CHAT" },
+    },
     select: {
       id: true,
       name: true,
@@ -121,6 +162,8 @@ export async function getCollectionDetail(
       category: true,
       domain: true,
       tags: true,
+      audience: true,
+      visibility: true,
     },
   });
 
@@ -128,16 +171,18 @@ export async function getCollectionDetail(
 
   const [totalDocuments, documents] = await Promise.all([
     prisma.ragDocument.count({
-      where: { collectionId, status: "APPROVED" },
+      where: { collectionId, status: "APPROVED", audience: "EXTERNAL", visibility: { has: "CHAT" } },
     }),
     prisma.ragDocument.findMany({
-      where: { collectionId, status: "APPROVED" },
+      where: { collectionId, status: "APPROVED", audience: "EXTERNAL", visibility: { has: "CHAT" } },
       select: {
         id: true,
         title: true,
         category: true,
         domain: true,
         tags: true,
+        audience: true,
+        visibility: true,
         sourceType: true,
         chunks: {
           where: { status: "APPROVED" },

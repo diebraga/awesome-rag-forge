@@ -31,4 +31,32 @@ describe("buildSourceProposal", () => {
     expect(proposal.reviewTriage.disposition).toBe("NEEDS_REVIEW");
     expect(proposal.reviewTriage.recommendedAction).toMatch(/review/i);
   });
+  it("infers restricted knowledge visibility from sensitive source language", async () => {
+    const proposal = await buildSourceProposal({
+      title: "Credential rotation",
+      sourceText: "Confidential credential rotation note with a private API key.",
+      sourceType: "NOTE",
+      category: "operations",
+      domain: "security",
+    });
+
+    expect(proposal.proposedCollection.audience).toBe("RESTRICTED");
+    expect(proposal.proposedDocument.audience).toBe("RESTRICTED");
+    expect(proposal.proposedDocument.visibility).toEqual(["REVIEW"]);
+  });
+
+  it("asks the caller to confirm the audience when one was not provided", async () => {
+    const proposal = await buildSourceProposal({
+      title: "Audience choice",
+      sourceText: "A reusable product note for the knowledge base.",
+      sourceType: "NOTE",
+      category: "product",
+      domain: "docs",
+    });
+
+    expect(proposal.requiredUserQuestions).toContain(
+      "Choose the audience for this knowledge: EXTERNAL (end-user/shareable), INTERNAL (operator/private), or RESTRICTED (sensitive/high-risk).",
+    );
+  });
+
 });

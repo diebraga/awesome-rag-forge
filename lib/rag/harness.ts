@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { HarnessRuleKind } from "@/generated/prisma/enums";
+import type { HarnessRuleKind, HarnessRuleScope } from "@/generated/prisma/enums";
 
 /**
  * The harness describes what the read-only chat can and cannot do, on top
@@ -22,12 +22,14 @@ export type HarnessRuleInput = {
   kind: HarnessRuleKind;
   statement: string;
   reason?: string;
+  scope?: HarnessRuleScope;
 };
 
 export type HarnessProposal = {
   kind: HarnessRuleKind;
   statement: string;
   reason?: string;
+  scope: HarnessRuleScope;
   warnings: string[];
 };
 
@@ -202,6 +204,7 @@ export function buildHarnessProposal(
     kind: input.kind,
     statement,
     reason: input.reason?.trim() || undefined,
+    scope: input.scope ?? "USER_CHAT",
     warnings,
   };
 }
@@ -210,12 +213,13 @@ type PrismaLike = Pick<PrismaClient, "harnessRule">;
 
 export async function getApprovedHarnessRules(prisma: PrismaLike) {
   const rules = await prisma.harnessRule.findMany({
-    where: { status: "APPROVED" },
+    where: { status: "APPROVED", scope: { in: ["USER_CHAT", "ALL"] } },
     orderBy: { createdAt: "asc" },
   });
 
   return {
     capabilities: rules.filter((rule) => rule.kind === "CAPABILITY").map((rule) => rule.statement),
     restrictions: rules.filter((rule) => rule.kind === "RESTRICTION").map((rule) => rule.statement),
+    rules: rules.map((rule) => ({ id: rule.id, kind: rule.kind, statement: rule.statement, scope: rule.scope })),
   };
 }

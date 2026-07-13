@@ -27,6 +27,19 @@ enum RagStatus {
   ARCHIVED
 }
 
+enum RagAudience {
+  EXTERNAL
+  INTERNAL
+  RESTRICTED
+}
+
+enum RagVisibility {
+  CHAT
+  OPERATOR
+  REVIEW
+  EVAL
+}
+
 enum RagFeedbackRating {
   GOOD
   BAD
@@ -48,6 +61,8 @@ model RagCollection {
   category    String?
   domain      String?
   tags        String[]      @default([])
+  audience    RagAudience   @default(EXTERNAL)
+  visibility  RagVisibility[] @default([CHAT, OPERATOR, REVIEW])
   metadata    Json?
   documents   RagDocument[]
   evalCases   RagEvalCase[]
@@ -56,6 +71,7 @@ model RagCollection {
 
   @@index([category])
   @@index([domain])
+  @@index([audience])
 }
 
 model RagDocument {
@@ -69,6 +85,8 @@ model RagDocument {
   category     String?
   domain       String?
   tags         String[]      @default([])
+  audience     RagAudience   @default(EXTERNAL)
+  visibility   RagVisibility[] @default([CHAT, OPERATOR, REVIEW])
   status       RagStatus     @default(DRAFT)
   metadata     Json?
   chunks       RagChunk[]
@@ -83,6 +101,7 @@ model RagDocument {
   @@index([sourceType])
   @@index([category])
   @@index([domain])
+  @@index([audience])
 }
 
 model RagChunk {
@@ -188,6 +207,13 @@ enum HarnessRuleKind {
   RESTRICTION
 }
 
+enum HarnessRuleScope {
+  USER_CHAT
+  OPERATOR_AGENT
+  MCP_AGENT
+  ALL
+}
+
 /// Harness rules describe what the read-only chat can and cannot do, in
 /// addition to the hardcoded identity/read-only rules in lib/rag/chat-context.ts
 /// (which these can never loosen — see lib/rag/harness.ts). Configured only
@@ -198,6 +224,7 @@ model HarnessRule {
   id          String          @id @default(cuid())
   kind        HarnessRuleKind
   statement   String
+  scope       HarnessRuleScope @default(USER_CHAT)
   status      RagStatus       @default(DRAFT)
   reason      String?
   warnings    Json?
@@ -208,6 +235,7 @@ model HarnessRule {
   updatedAt   DateTime        @updatedAt
 
   @@index([kind])
+  @@index([scope])
   @@index([status])
 }
 

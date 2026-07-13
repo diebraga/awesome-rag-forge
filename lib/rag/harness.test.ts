@@ -126,6 +126,20 @@ describe("buildHarnessProposal", () => {
     if (!("refused" in result)) {
       expect(result.statement).toBe("Help the user find relevant documentation");
       expect(result.kind).toBe("CAPABILITY");
+      expect(result.scope).toBe("USER_CHAT");
+    }
+  });
+
+  it("preserves an explicit harness rule scope", () => {
+    const result = buildHarnessProposal({
+      kind: "RESTRICTION",
+      statement: "Cannot show operator-only notes to end users",
+      scope: "OPERATOR_AGENT",
+    });
+
+    expect("refused" in result).toBe(false);
+    if (!("refused" in result)) {
+      expect(result.scope).toBe("OPERATOR_AGENT");
     }
   });
 

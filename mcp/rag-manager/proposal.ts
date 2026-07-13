@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RagSourceType } from "../../generated/prisma/enums";
 import { chunkSourceText, chunkPdfPages, type ExtractedPageInput } from "./chunking";
 import { buildRetrievalAliases } from "../../lib/rag/retrieval-enrichment";
+import { inferKnowledgeVisibility, KNOWLEDGE_AUDIENCES, KNOWLEDGE_VISIBILITY_SCOPES } from "../../lib/rag/visibility";
 import { buildPlacementReview, type PlacementCandidateInput } from "./placement-intelligence";
 import { buildReviewTriage } from "./review-triage";
 import { prisma } from "./prisma";
@@ -26,6 +27,9 @@ export const statusSchema = z.enum([
   "ARCHIVED",
 ]);
 
+export const audienceSchema = z.enum(KNOWLEDGE_AUDIENCES);
+export const visibilitySchema = z.enum(KNOWLEDGE_VISIBILITY_SCOPES);
+
 export const feedbackRatingSchema = z.enum([
   "GOOD",
   "BAD",
@@ -42,6 +46,8 @@ export const proposalSchema = z.object({
     category: z.string().optional(),
     domain: z.string().optional(),
     tags: z.array(z.string()).default([]),
+    audience: audienceSchema,
+    visibility: z.array(visibilitySchema).default([]),
   }),
   shouldCreateCollection: z.boolean(),
   proposedDocument: z.object({
@@ -51,6 +57,8 @@ export const proposalSchema = z.object({
     category: z.string().optional(),
     domain: z.string().optional(),
     tags: z.array(z.string()).default([]),
+    audience: audienceSchema,
+    visibility: z.array(visibilitySchema).default([]),
   }),
   chunkPlan: z.array(
     z.object({
@@ -94,9 +102,17 @@ export const proposalSchema = z.object({
   }),
   reviewStatus: z.literal("PENDING_REVIEW"),
   warnings: z.array(z.string()),
+  requiredUserQuestions: z.array(z.string()).default([]),
 });
 
 export type SourceProposal = z.infer<typeof proposalSchema>;
+
+const AUDIENCE_CONFIRMATION_QUESTION =
+  "Choose the audience for this knowledge: EXTERNAL (end-user/shareable), INTERNAL (operator/private), or RESTRICTED (sensitive/high-risk).";
+
+function audienceRequiredQuestions(input: { audience?: unknown }) {
+  return input.audience ? [] : [AUDIENCE_CONFIRMATION_QUESTION];
+}
 
 function titleFromSource(sourceText: string) {
   const firstLine = sourceText
@@ -176,6 +192,8 @@ export async function buildSourceProposal(input: {
   category?: string;
   domain?: string;
   tags?: string[];
+  audience?: z.infer<typeof audienceSchema>;
+  visibility?: Array<z.infer<typeof visibilitySchema>>;
   collectionId?: string;
 }) {
   const collection = input.collectionId
@@ -186,7 +204,16 @@ export async function buildSourceProposal(input: {
 
   const title = input.title?.trim() || titleFromSource(input.sourceText);
   const rawChunks = chunkSourceText(input.sourceText);
-  const warnings: string[] = [];
+  const visibilityPlan = inferKnowledgeVisibility({
+    text: input.sourceText,
+    audience: input.audience,
+    visibility: input.visibility,
+  });
+  const effectiveAudience = input.audience ?? collection?.audience ?? visibilityPlan.audience;
+  const effectiveVisibility = input.visibility?.length
+    ? input.visibility
+    : collection?.visibility ?? visibilityPlan.visibility;
+  const warnings: string[] = [...visibilityPlan.warnings];
 
   if (!input.category && !input.domain) {
     warnings.push("No category or domain was provided. Consider asking the user how this source should be classified.");
@@ -224,6 +251,8 @@ export async function buildSourceProposal(input: {
         category: collection.category ?? input.category,
         domain: collection.domain ?? input.domain,
         tags: collection.tags,
+        audience: collection.audience,
+        visibility: collection.visibility,
       }
     : {
         name: defaultCollectionName(input.category, input.domain),
@@ -231,6 +260,8 @@ export async function buildSourceProposal(input: {
         category: input.category,
         domain: input.domain,
         tags: input.tags ?? [],
+        audience: effectiveAudience,
+        visibility: effectiveVisibility,
       };
 
   const chunks = rawChunks.map((chunk) => ({
@@ -255,6 +286,8 @@ export async function buildSourceProposal(input: {
       category: input.category,
       domain: input.domain,
       tags: input.tags ?? [],
+      audience: effectiveAudience,
+      visibility: effectiveVisibility,
     },
     chunkPlan: chunks,
     sourcePlan: {
@@ -266,6 +299,7 @@ export async function buildSourceProposal(input: {
     reviewTriage,
     reviewStatus: "PENDING_REVIEW" as const,
     warnings,
+    requiredUserQuestions: audienceRequiredQuestions(input),
   } satisfies SourceProposal;
 }
 
@@ -281,6 +315,8 @@ export async function buildFileProposal(input: {
   category?: string;
   domain?: string;
   tags?: string[];
+  audience?: z.infer<typeof audienceSchema>;
+  visibility?: Array<z.infer<typeof visibilitySchema>>;
   collectionId?: string;
 }) {
   const collection = input.collectionId
@@ -292,7 +328,16 @@ export async function buildFileProposal(input: {
   const title = input.title?.trim() || input.fileName.replace(/\.pdf$/i, "").trim() || "Untitled document";
   const sourceText = input.pages.map((page) => page.text).join("\n\n");
   const rawChunks = chunkPdfPages(input.pages);
-  const warnings: string[] = [];
+  const visibilityPlan = inferKnowledgeVisibility({
+    text: sourceText,
+    audience: input.audience,
+    visibility: input.visibility,
+  });
+  const effectiveAudience = input.audience ?? collection?.audience ?? visibilityPlan.audience;
+  const effectiveVisibility = input.visibility?.length
+    ? input.visibility
+    : collection?.visibility ?? visibilityPlan.visibility;
+  const warnings: string[] = [...visibilityPlan.warnings];
 
   if (!input.category && !input.domain) {
     warnings.push("No category or domain was provided. Consider asking the user how this source should be classified.");
@@ -334,6 +379,8 @@ export async function buildFileProposal(input: {
         category: collection.category ?? input.category,
         domain: collection.domain ?? input.domain,
         tags: collection.tags,
+        audience: collection.audience,
+        visibility: collection.visibility,
       }
     : {
         name: defaultCollectionName(input.category, input.domain),
@@ -341,6 +388,8 @@ export async function buildFileProposal(input: {
         category: input.category,
         domain: input.domain,
         tags: input.tags ?? [],
+        audience: effectiveAudience,
+        visibility: effectiveVisibility,
       };
 
   const chunks = rawChunks.map((chunk) => ({
@@ -364,6 +413,8 @@ export async function buildFileProposal(input: {
       category: input.category,
       domain: input.domain,
       tags: input.tags ?? [],
+      audience: effectiveAudience,
+      visibility: effectiveVisibility,
     },
     chunkPlan: chunks,
     sourcePlan: {
@@ -374,5 +425,6 @@ export async function buildFileProposal(input: {
     reviewTriage,
     reviewStatus: "PENDING_REVIEW" as const,
     warnings,
+    requiredUserQuestions: audienceRequiredQuestions(input),
   } satisfies SourceProposal;
 }

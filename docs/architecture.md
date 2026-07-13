@@ -12,7 +12,7 @@ This project keeps normal use and knowledge management separate. The default pat
 | Can approve/reject/archive? | `/review` can approve/reject pending chunks and harness rules locally only; no archive | Yes |
 | Can change harness capabilities/restrictions? | `/review` can approve/reject pending rules only | Yes, after propose → approve → human review |
 | Can delete anything? | **No** | No delete tools are exposed yet either — see [MCP Server](mcp-server.md) |
-| Reads from DB? | Normal UI: `APPROVED` only. `/review`: pending chunks/rules only | Yes — all statuses, for review and search |
+| Reads from DB? | Normal UI: `APPROVED` + `EXTERNAL` + `CHAT`-visible only. `/review`: pending chunks/rules only | Yes — all statuses/audiences, for review and search |
 | Writes to DB? | **`RagFeedback` in normal chat/UI; `/review` approve/reject server actions locally only** (see below) | Yes, through propose → approve workflows |
 
 The chat app has no MCP client and no tool-calling loop — it is a plain request/response chat backed by [`lib/rag/retrieval.ts`](../lib/rag/retrieval.ts). Normal end-user routes in `app/` cannot mutate `RagCollection`, `RagDocument`, `RagChunk`, `RagSource`, `RagReview`, `RagEvalCase`, or `HarnessRule`. `RagFeedback` is the one end-user exception, and it's deliberately narrow: `app/api/feedback/route.ts` can create a `RagFeedback` row (a thumbs up/down on an answer, from the chat UI) and nothing else — it has no code path to any other table. This exists because end-user reaction to an already-approved answer isn't a knowledge-base change; it doesn't need the propose/approve workflow because it can't affect what the assistant knows or does, only what gets recorded as feedback for a human to review later.
@@ -50,7 +50,7 @@ lib/rag/
 
 If you're adding a capability, ask which audience it's for before deciding where it goes: information for the knowledge base's creator belongs in an MCP tool; behavior for the person testing/using the chat belongs in `lib/rag/chat-context.ts`. Don't let the two mix.
 
-**The Collections pages (`app/collections/`) are a third case, not an exception.** They're a plain, `APPROVED`-only browsing view of collections/documents/chunks — part of the same read-only, end-user-facing surface as the chat, backed by their own read-only module (`lib/rag/collections.ts`) rather than `chat-context.ts`. They deliberately *do* show collection/document names — that's the point of the feature — which is not a contradiction of the chat's "never narrate structure" rule, because that rule is about the chat's conversational behavior specifically, not about every read-only surface in `app/`. Both stay within the same boundary that matters: `APPROVED`-only, no write path.
+**The Collections pages (`app/collections/`) are a third case, not an exception.** They're a plain, `APPROVED`-only browsing view of collections/documents/chunks — part of the same read-only, end-user-facing surface as the chat, backed by their own read-only module (`lib/rag/collections.ts`) rather than `chat-context.ts`. They deliberately *do* show collection/document names — that's the point of the feature — which is not a contradiction of the chat's "never narrate structure" rule, because that rule is about the chat's conversational behavior specifically, not about every read-only surface in `app/`. Both stay within the same boundary that matters: `APPROVED`, `EXTERNAL`, `CHAT`-visible only, no write path.
 
 An earlier version of this feature rendered collections as a node graph (`@xyflow/react`). It was removed in favor of a plain list once it became clear a graph adds no value with only a handful of collections — don't re-add graph/visualization complexity without a concrete reason (e.g. the knowledge base growing large enough that a visual overview earns its keep, or real embedding-based clustering — see [RAG Architecture](rag.md)).
 
@@ -74,7 +74,7 @@ Ollama local model server
 Response rendered in the chat UI
 ```
 
-The chat route calls `buildAssistantContext()` with the latest user question to get a single assembled system prompt (identity + read-only rules + harness capabilities/restrictions + knowledge-base scope) plus query-ranked retrieved chunks, then calls the selected chat provider. Only chunks, documents, and harness rules with `status: APPROVED` are ever read here, and nothing in this path issues a write query. See [API Routes](api-routes.md) for the full route contract.
+The chat route calls `buildAssistantContext()` with the latest user question to get a single assembled system prompt (identity + read-only rules + harness capabilities/restrictions + knowledge-base scope) plus query-ranked retrieved chunks, then calls the selected chat provider. Only chunks/documents with `status: APPROVED`, `audience: EXTERNAL`, and `visibility` containing `CHAT` are ever read here; only approved harness rules scoped to `USER_CHAT` or `ALL` are rendered. Nothing in this path issues a write query. See [API Routes](api-routes.md) for the full route contract.
 
 ### Any agent, not just this chat
 
@@ -100,17 +100,17 @@ The MCP server is the only place new knowledge or harness rules are proposed and
 1. A user (via an MCP client) asks the assistant to add a source.
 2. The assistant calls `propose_source_insert`, which returns a proposal without touching the database.
 3. The user reviews the proposal and approves it.
-4. The assistant calls `approve_source_insert` with `userApproval: true`, which creates a document and chunks with `status: PENDING_REVIEW`.
+4. The assistant calls `approve_source_insert` with `userApproval: true`, which creates a document and chunks with `status: PENDING_REVIEW` plus the approved `audience`/`visibility` boundary. New proposals infer this boundary from the source text and inherit it from an explicitly selected collection unless the user overrides it.
 5. A human reviewer calls `approve_chunk` (or `reject_chunk`) via the assistant.
-6. Approved chunks become visible to the chat app's RAG context on the next chat request — read-only, no action required on the chat app's side.
+6. Approved chunks become visible to the chat app's RAG context on the next chat request only when their document and collection are also `EXTERNAL` and `CHAT`-visible — read-only, no action required on the chat app's side.
 
 **Harness rules** (same shape, one extra review stage since these define behavioral boundaries, not just content):
 1. A user asks the assistant to add a capability or restriction.
 2. The assistant calls `propose_harness_update`, which validates the request against a hardcoded blocklist (see [MCP Server](mcp-server.md#harness-rules-propose--approve--review)) and returns a structured proposal — or a refusal — without touching the database.
 3. The user reviews and approves.
-4. The assistant calls `approve_harness_update` with `userApproval: true`, which re-validates and writes the rule as `PENDING_REVIEW`.
+4. The assistant calls `approve_harness_update` with `userApproval: true`, which re-validates and writes the rule as `PENDING_REVIEW` with a scope (`USER_CHAT`, `OPERATOR_AGENT`, `MCP_AGENT`, or `ALL`).
 5. A human reviewer calls `approve_harness_rule` (or `reject_harness_rule`).
-6. Approved rules appear in the system prompt of any connected agent on the next request.
+6. Approved `USER_CHAT`/`ALL` rules appear in the chat system prompt on the next request; operator/MCP-scoped rules remain visible to management/review surfaces without changing the end-user chat.
 
 ## Two separate Prisma clients
 
