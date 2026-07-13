@@ -9,6 +9,7 @@ When `ENABLE_TESTING_SURFACE=true`, the Next.js app exposes the local testing su
 - `GET /` — chat UI for testing approved retrieval.
 - `GET /collections` and `GET /collections/[collectionId]` — read-only approved collection browsing.
 - `GET /harness` — read-only approved assistant identity/capability/restriction view.
+- `GET /review` — local-only pending chunk/harness-rule review dashboard; additionally refuses production/public runtimes.
 - `/api/chat` — chat reply generation.
 - `/api/feedback` — the narrow feedback capture route that only creates `RagFeedback`.
 - `/api/rag`, `/api/rag/context`, `/api/rag/harness`, `/api/rag/collections*`, `/api/rag/documents/[id]/download` — read-only testing/debug/read surfaces.

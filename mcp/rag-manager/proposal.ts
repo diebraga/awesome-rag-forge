@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { RagSourceType } from "../../generated/prisma/enums";
 import { chunkSourceText, chunkPdfPages, type ExtractedPageInput } from "./chunking";
-import { buildRetrievalAliases } from "./retrieval-enrichment";
+import { buildRetrievalAliases } from "../../lib/rag/retrieval-enrichment";
 import { buildPlacementReview, type PlacementCandidateInput } from "./placement-intelligence";
+import { buildReviewTriage } from "./review-triage";
 import { prisma } from "./prisma";
 
 export const sourceTypeSchema = z.enum([
@@ -75,11 +76,21 @@ export const proposalSchema = z.object({
       z.object({
         documentId: z.string(),
         title: z.string(),
+        status: z.enum(["PENDING_REVIEW", "APPROVED"]).optional(),
         score: z.number(),
         overlapRatio: z.number(),
         matchingSignals: z.array(z.string()),
       }),
     ),
+  }),
+  reviewTriage: z.object({
+    disposition: z.enum(["READY_FOR_BATCH_APPROVAL", "NEEDS_REVIEW", "CONFLICTS_WITH_APPROVED", "DUPLICATE_OR_UPDATE_CANDIDATE"]),
+    confidence: z.number().min(0).max(1),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
+    summary: z.string(),
+    reasons: z.array(z.string()),
+    recommendedAction: z.string(),
+    trustedUseBlocked: z.literal(true),
   }),
   reviewStatus: z.literal("PENDING_REVIEW"),
   warnings: z.array(z.string()),
@@ -126,6 +137,7 @@ async function findPlacementCandidates(input: {
       select: {
         id: true,
         title: true,
+        status: true,
         category: true,
         domain: true,
         tags: true,
@@ -143,6 +155,7 @@ async function findPlacementCandidates(input: {
     return documents.map((document) => ({
       id: document.id,
       title: document.title,
+      status: document.status === "APPROVED" ? "APPROVED" : "PENDING_REVIEW",
       category: document.category,
       domain: document.domain,
       tags: document.tags,
@@ -197,6 +210,11 @@ export async function buildSourceProposal(input: {
     tags: input.tags,
     candidates: placementCandidates,
   });
+  const reviewTriage = buildReviewTriage({
+    sourceText: input.sourceText,
+    warnings,
+    placementReview,
+  });
 
   const proposedCollection = collection
     ? {
@@ -245,6 +263,7 @@ export async function buildSourceProposal(input: {
       sourceUrl: input.sourceUrl,
     },
     placementReview,
+    reviewTriage,
     reviewStatus: "PENDING_REVIEW" as const,
     warnings,
   } satisfies SourceProposal;
@@ -301,6 +320,11 @@ export async function buildFileProposal(input: {
     tags: input.tags,
     candidates: placementCandidates,
   });
+  const reviewTriage = buildReviewTriage({
+    sourceText,
+    warnings,
+    placementReview,
+  });
 
   const proposedCollection = collection
     ? {
@@ -347,6 +371,7 @@ export async function buildFileProposal(input: {
       citationText: title,
     },
     placementReview,
+    reviewTriage,
     reviewStatus: "PENDING_REVIEW" as const,
     warnings,
   } satisfies SourceProposal;

@@ -42,13 +42,14 @@ If a user drops this repository into an AI coding assistant and asks to set it u
 
 awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. A user connects an MCP-capable assistant, asks it to create or improve the knowledge base, reviews the proposed changes, and only approved knowledge becomes visible to the chat/testing surface.
 
-The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. It is meant for builders who want local-first RAG management, human approval, portable API/client documentation, and a clear separation between “using the knowledge base” and “changing the knowledge base.”
+The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. The system should capture added knowledge, organize it, and prioritize review without silently trusting ambiguous content. It is meant for builders who want local-first RAG management, human approval, portable API/client documentation, and a clear separation between “using the knowledge base” and “changing the knowledge base.”
 
 Current status: early local-first project. The MCP server can manage RAG knowledge, harness rules, feedback review, PDF ingestion, and eval creation workflows. The Next.js UI is a testing surface, not a production admin dashboard.
 
 ## Key Features
 
 - **MCP-managed knowledge base**: create, review, approve, archive, and inspect RAG knowledge through MCP tools.
+- **Review triage**: new knowledge is saved as `PENDING_REVIEW` with advisory buckets such as `READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, and `DUPLICATE_OR_UPDATE_CANDIDATE`; none of those buckets bypass human approval.
 - **Read-only testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready.
 - **Human approval boundary**: knowledge and harness changes go through proposal/review flows before affecting the chat.
 - **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
@@ -155,9 +156,9 @@ The HTTP surface is intentionally split: chat/context/collections/document-downl
 
 Every route is described in a generated OpenAPI 3.0 spec — interactive Swagger UI at `/api-docs` when the testing surface is enabled and the database is connected, with a direct download of `openapi.json` on the same page. Feed that file into [openapi-generator](https://openapi-generator.tech) to get a working client in any language — that's the actual "not tied to this project's stack" story: describe the API once, generate a client anywhere. The spec is generated from `@swagger` comments on each route into `app/api-docs/openapi.generated.json` (`scripts/generate-openapi.ts`, run automatically before every build) — see [docs/api-routes.md](docs/api-routes.md#api-docs-and-openapi-spec-api-docs-api-docsopenapijson).
 
-## Status: review dashboard
+## Review dashboard
 
-Today, approving, editing, and archiving knowledge happens through raw MCP tool calls (via whatever MCP client you're using — Claude, Cursor, etc.), not a dedicated screen. A human-friendly review dashboard is planned as a genuinely separate small application — not a write path bolted onto the read-only chat app — connecting to the MCP server's HTTP transport (`npm run mcp:rag-manager:http`, see [docs/mcp-server.md](docs/mcp-server.md#http-transport-for-a-web-based-client-eg-a-future-review-dashboard)) the same way any other MCP client does. The transport exists; the dashboard UI itself doesn't yet.
+The local testing UI includes `/review`, a human-friendly review queue for pending chunks and harness rules. This page is deliberately local-only: it reads pending rows directly from the configured Postgres database and uses server actions for approve/reject decisions, guarded by `ENABLE_TESTING_SURFACE=true` and a non-production runtime check (`lib/local-review-guard.ts`). It is not an MCP client, does not require `MCP_AUTH_TOKEN`, and must not be exposed as a hosted admin panel. The normal chat, collections, harness, and API surfaces remain approved-data/read-only.
 
 ## Documentation
 

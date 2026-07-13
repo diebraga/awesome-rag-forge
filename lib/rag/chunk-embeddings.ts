@@ -1,4 +1,4 @@
-import { embedTextWithOllama, formatPgVectorLiteral } from "../../lib/rag/embeddings";
+import { embedTextWithOllama, formatPgVectorLiteral } from "./embeddings";
 import { getRetrievalAliases, retrievalTextForEmbedding } from "./retrieval-enrichment";
 
 type RawClient = {

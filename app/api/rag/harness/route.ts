@@ -16,7 +16,7 @@ import { getApprovedHarnessRules } from "@/lib/rag/harness";
  * /api/rag/harness:
  *   get:
  *     summary: "Testing UI: approved assistant identity and harness"
- *     description: Read-only testing-surface endpoint for showing the approved assistant identity, capabilities, and restrictions. Harness proposal, approval, rejection, and review remain MCP-only.
+ *     description: Read-only testing-surface endpoint for showing the approved assistant identity, capabilities, and restrictions. Harness proposal and management stay outside this API; pending review is handled through MCP or the guarded local /review page.
  *     tags: [Harness]
  *     security: [{ bearerAuth: [] }]
  *     responses:

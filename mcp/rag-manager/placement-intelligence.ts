@@ -5,6 +5,7 @@ export type PlacementRecommendation = "CREATE_NEW_DOCUMENT" | "CREATE_RELATED_DO
 export type PlacementCandidateInput = {
   id: string;
   title: string;
+  status?: "PENDING_REVIEW" | "APPROVED";
   category?: string | null;
   domain?: string | null;
   tags?: string[];
@@ -20,6 +21,7 @@ export type PlacementReview = {
   candidates: Array<{
     documentId: string;
     title: string;
+    status?: "PENDING_REVIEW" | "APPROVED";
     score: number;
     overlapRatio: number;
     matchingSignals: string[];
@@ -142,6 +144,7 @@ export function buildPlacementReview(input: {
       return {
         documentId: candidate.id,
         title: candidate.title,
+        status: candidate.status,
         score: Math.min(100, Math.round(score)),
         overlapRatio: Number(overlap.toFixed(2)),
         matchingSignals: signals,

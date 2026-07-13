@@ -4,7 +4,7 @@
 
 The chat uses hybrid retrieval over `APPROVED` chunks belonging to `APPROVED` documents. The latest user question is passed into `lib/rag/retrieval.ts`, which runs semantic pgvector search when chunk embeddings are available, merges those candidates with lexical candidates, then ranks the union before building the prompt.
 
-MCP proposals first run a placement review against nearby existing documents, then enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This is still behind the existing propose -> approve review path: placement recommendations and aliases are proposal data, saved content receives fingerprints for future duplicate detection, and embeddings are written only when a chunk is approved through MCP.
+MCP proposals first run a placement review against nearby existing documents, then add review triage, then enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This is still behind the existing propose -> approve review path: placement recommendations and aliases are proposal data, saved content receives fingerprints for future duplicate detection, and embeddings are written only when a human approves a chunk through MCP or the guarded local `/review` page.
 
 Retrieval normalizes punctuation and spacing before scoring, so compact user phrasing such as `COEse` can match spaced stored knowledge such as `COES eindex`. Semantic search handles broader phrasing such as `tell me about the company` when the relevant chunk has an embedding. If no semantic or lexical candidates match, retrieval returns no context; the chat then follows the no-context branch and must not invent citations.
 
@@ -28,11 +28,17 @@ PDF uploads (`propose_file_upload`) use a separate, page-aware chunker, `chunkPd
 New knowledge is never immediately usable by the chat app:
 
 1. `propose_source_insert` (or `propose_file_upload` for a PDF) — read-only, returns a proposal (recommended collection, document metadata, chunk plan, warnings).
-2. `approve_source_insert` (or `approve_file_upload`) — writes the document/chunks as `PENDING_REVIEW`, but only if `userApproval: true`.
-3. `approve_chunk` / `reject_chunk` — a human reviewer moves chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already — that's what makes the document (and its downloadable file, if it has one) actually visible; a document sitting at `PENDING_REVIEW` is never retrieved or downloadable regardless of individual chunk statuses.
+2. `approve_source_insert` (or `approve_file_upload`) — writes the document/chunks as `PENDING_REVIEW`, but only if `userApproval: true`. The saved metadata includes `reviewTriage`, which may mark the item as `READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`. That triage only prioritizes review; it never makes the content trusted by itself.
+3. `approve_chunk` / `reject_chunk` — or the guarded local `/review` page's equivalent server actions — lets a human reviewer move chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already — that's what makes the document (and its downloadable file, if it has one) actually visible; a document sitting at `PENDING_REVIEW` is never retrieved or downloadable regardless of individual chunk statuses.
 4. **Or**, instead of step 3 for an already-reviewed chunk that just needs correcting: `propose_chunk_update` → `approve_chunk_update` (see [MCP Server](mcp-server.md#correcting-knowledge-propose_chunk_update--approve_chunk_update)). Editing an `APPROVED` chunk sends it back to `PENDING_REVIEW` — the loop re-enters at step 3, it doesn't skip it. Removal follows the same "never skip review" shape via `archive_document` (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)).
 
 Only step 3's `APPROVED` chunks (belonging to an `APPROVED` document) are ever surfaced to end users in the chat app.
+
+### Review triage
+
+Review triage exists to reduce friction without poisoning the trusted RAG. A clean item can be grouped as `READY_FOR_BATCH_APPROVAL`, while risky items are prioritized as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`. All of these states still keep `trustedUseBlocked: true` until a human approves the chunk.
+
+The MCP `list_pending_reviews` tool and the local `/review` dashboard both surface these buckets so reviewers do not need to reason over the entire pending queue at once. Review high-risk buckets first, then batch-approve clean-looking items after a spot check.
 
 ## Feedback and evaluation
 

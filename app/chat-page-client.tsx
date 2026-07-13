@@ -71,6 +71,20 @@ function describePullStatus(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+
+function ThinkingBubble() {
+  return (
+    <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">
+      <span className="sr-only">Thinking</span>
+      <span className="inline-flex items-center gap-1" aria-hidden="true">
+        <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-current" />
+      </span>
+    </div>
+  );
+}
+
 function PersonAvatar() {
   return (
     <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 text-black">
@@ -613,18 +627,18 @@ export default function Home() {
             {isLoading && (
               <div className="flex items-end gap-3">
                 <PersonAvatar />
-                <div className="max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3 text-sm leading-6 text-muted-foreground">Thinking...</div>
+                <ThinkingBubble />
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
-        <form onSubmit={handleSubmit} className="flex w-full shrink-0 gap-3">
+        <form onSubmit={handleSubmit} className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
           <label className="sr-only" htmlFor="message">Message</label>
-          <Input id="message" value={input} onChange={(event) => setInput(event.target.value)} placeholder={providerReady ? "Ask a question..." : selectedProvider?.id === "ollama" && serverStatus === "connected" ? "Download the selected model to start chatting" : "Connect a provider to start chatting"} className="h-12 flex-1 rounded-xl bg-white px-4" disabled={chatDisabled} />
-          <Button type="submit" size="lg" className="h-12 rounded-xl px-5" disabled={chatDisabled}>
-            {isLoading ? "Wait" : "Send"}<SendHorizontal data-icon="inline-end" className="size-4" />
+          <Input id="message" value={input} onChange={(event) => setInput(event.target.value)} placeholder={providerReady ? "Ask a question..." : selectedProvider?.id === "ollama" && serverStatus === "connected" ? "Download the selected model to start chatting" : "Connect a provider to start chatting"} className="h-11 flex-1 border-0 bg-transparent px-3 shadow-none focus-visible:ring-0" disabled={chatDisabled} />
+          <Button type="submit" size="icon-lg" className="size-11 shrink-0 rounded-xl" disabled={chatDisabled} aria-label={isLoading ? "Waiting for response" : "Send message"}>
+            <SendHorizontal className={isLoading ? "size-4 opacity-60" : "size-4"} />
           </Button>
         </form>
       </section>

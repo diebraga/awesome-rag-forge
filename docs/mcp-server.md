@@ -1,6 +1,6 @@
 # MCP Server
 
-The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the **only** supported write path into the database. The Next.js chat app is a read-only viewer — it never writes knowledge, only reads `APPROVED` chunks — and every creation, edit, approval, rejection, or archival action must go through this server's tools. See [System Architecture](architecture.md) for the full read/write boundary.
+The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the supported path for creating, organizing, correcting, archiving, and ingesting knowledge/harness changes. The Next.js chat app only reads `APPROVED` chunks; the separate local-only `/review` page can approve/reject pending chunks and harness rules directly from the database. See [System Architecture](architecture.md) for the full read/write boundary.
 
 Opening the Next.js app in a browser does not connect this MCP server. The browser UI can test approved knowledge, browse approved collections/harness state, submit narrow answer feedback, and use local setup helpers, but it must not be treated as an MCP client. To create or manage RAG/harness data, connect an MCP-capable assistant to this server over stdio from the local clone.
 
@@ -14,13 +14,13 @@ npm run mcp:rag-manager
 
 This starts the server on stdio transport, which is how local MCP clients (Claude Desktop, Codex CLI, etc.) expect to talk to it.
 
-### HTTP transport (for a web-based client, e.g. a future review dashboard)
+### HTTP transport (for non-stdio MCP clients)
 
 ```bash
 npm run mcp:rag-manager:http
 ```
 
-Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (the `server` instance is exported and reused, see `mcp/rag-manager/http.ts`) — over `StreamableHTTPServerTransport` at `http://127.0.0.1:3200/mcp` instead of stdio. Use this only when a client can't be spawned as a stdio subprocess (a web page, for instance); stdio remains the default and the only transport Claude Desktop/Cursor/etc. need.
+Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (the `server` instance is exported and reused, see `mcp/rag-manager/http.ts`) — over `StreamableHTTPServerTransport` at `http://127.0.0.1:3200/mcp` instead of stdio. Use this only when a trusted MCP client cannot spawn a stdio subprocess; stdio remains the default and the only transport Claude Desktop/Cursor/etc. need. The local `/review` page does not use this transport.
 
 - **Bound to `127.0.0.1` by default, on purpose.** Override with `MCP_HTTP_HOST`/`MCP_HTTP_PORT`, but this server has full read/write access to the knowledge base (see [Security Considerations](security.md#mcp-server-trust-boundary)) — widening the bind address means putting real authentication in front of it first, not just changing an env var.
 - **Requires a bearer token on every request.** The first time you run `npm run mcp:rag-manager:http`, it generates a random `MCP_AUTH_TOKEN`, saves it to `.env`, and prints it once to the terminal along with the exact header to send: `Authorization: Bearer <token>`. Configure your HTTP-based MCP client with that header — requests without it get a `401`. This token is separate from `APP_API_KEY` (the Next.js testing surface's key) on purpose: they guard different privilege levels, so they never share a credential. To rotate it, delete the `MCP_AUTH_TOKEN` line from `.env` and restart the server; a new one generates.
@@ -69,7 +69,7 @@ The MCP server is allowed to create and manage the RAG knowledge base and harnes
 
 ## The safety rule
 
-**The assistant must call `propose_source_insert` before writing anything new.** It must show the proposal to the user and ask an explicit approval question before calling `approve_source_insert` with `userApproval: true`. New knowledge always starts as `PENDING_REVIEW` — nothing skips human review to become `APPROVED`.
+**The assistant must call `propose_source_insert` before writing anything new.** It must show the proposal to the user and ask an explicit approval question before calling `approve_source_insert` with `userApproval: true`. New knowledge always starts as `PENDING_REVIEW` — nothing skips human review to become `APPROVED`. Review triage can make approval faster by grouping clean-looking items for batch review, but it is not an auto-approval mechanism.
 
 A proposal includes:
 
@@ -79,6 +79,7 @@ A proposal includes:
 - the chunking plan
 - source/citation metadata
 - a `placementReview` recommendation (`CREATE_NEW_DOCUMENT`, `CREATE_RELATED_DOCUMENT`, `UPDATE_EXISTING_DOCUMENT`, or `DUPLICATE_SKIP`) with confidence, reasons, and likely existing-document candidates
+- a `reviewTriage` recommendation (`READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`) that explains review priority and the recommended human action
 - an explicit list of warnings (e.g. "no category or domain was provided")
 
 ## Document attachments require storage configuration and approval
@@ -97,7 +98,7 @@ For the common case of "here's a PDF, extract its knowledge and (maybe) keep the
 
 1. `propose_file_upload` — takes `fileName` and `fileBase64` (the whole file, base64-encoded; capped at ~15MB of raw file data since it round-trips through the calling model's context on both the propose and approve calls). It validates the `%PDF` magic bytes, extracts text page-by-page via [`mcp/rag-manager/extraction.ts`](../mcp/rag-manager/extraction.ts) (`pdf-parse`'s text layer first; any page with almost no extractable text — likely scanned/photographed — is rasterized and run through `tesseract.js` OCR instead), then builds a page-numbered chunk plan via `chunkPdfPages()` in [`chunking.ts`](../mcp/rag-manager/chunking.ts). Read-only: no database write, no storage upload. The proposal's warnings call out how many pages needed OCR, so a reviewer knows to double-check accuracy there.
 2. **Before calling `approve_file_upload`, the calling assistant must always ask the user to choose between two modes** — this is stated directly in `propose_file_upload`'s tool description and its `requiredUserQuestion`, not left to inference: extract text only (nothing enters the storage bucket, no storage configuration needed at all), or also store the original file for later download. Never assume one or the other, even if storage happens to be configured.
-3. `approve_file_upload` — takes the same proposal back plus `fileName`/`fileBase64` again (the actual bytes have to be resupplied; the DB proposal alone doesn't carry binary data), the user's `storeOriginalFile` choice from step 2, and `userApproval: true`. When `storeOriginalFile: true` and storage is configured, it uploads the file under a generated key and sets `storageKey` on the document. When storage is not configured, it falls back to text-only storage and says so clearly instead of refusing the whole knowledge ingest. When `storeOriginalFile: false`, it skips storage entirely — no upload, `storageKey` stays `null`, and it works with no storage env vars configured at all. Either way, the collection/document/chunks/sources are created in one transaction, all `PENDING_REVIEW` until a human runs `approve_chunk` on the resulting chunks.
+3. `approve_file_upload` — takes the same proposal back plus `fileName`/`fileBase64` again (the actual bytes have to be resupplied; the DB proposal alone doesn't carry binary data), the user's `storeOriginalFile` choice from step 2, and `userApproval: true`. When `storeOriginalFile: true` and storage is configured, it uploads the file under a generated key and sets `storageKey` on the document. When storage is not configured, it falls back to text-only storage and says so clearly instead of refusing the whole knowledge ingest. When `storeOriginalFile: false`, it skips storage entirely — no upload, `storageKey` stays `null`, and it works with no storage env vars configured at all. Either way, the collection/document/chunks/sources are created in one transaction, all `PENDING_REVIEW` until a human runs `approve_chunk` on the resulting chunks. The proposal and saved metadata include `reviewTriage`, so OCR warnings, storage fallbacks, duplicate/update candidates, and clean batch candidates are visible during review.
 
 Every `RagChunk`/`RagSource` created this way carries a `pageNumber`, so citations and future review UIs can point at the exact page rather than just the document as a whole. Extracted text is normalized before chunking: repeated whitespace is collapsed, soft line-break hyphenation is repaired, and paragraph boundaries are kept where possible. `RagDocument.metadata.fileStored` records which mode was used.
 

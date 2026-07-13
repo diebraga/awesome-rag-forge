@@ -24,9 +24,9 @@ import {
   deleteFileFromStorage,
 } from "../../lib/storage";
 import { buildHarnessProposal } from "../../lib/rag/harness";
-import { withRetrievalAliases } from "./retrieval-enrichment";
+import { withRetrievalAliases } from "../../lib/rag/retrieval-enrichment";
 import { withContentFingerprint } from "./placement-intelligence";
-import { embedChunkForApproval, storeChunkEmbedding } from "./chunk-embeddings";
+import { embedChunkForApproval, storeChunkEmbedding } from "../../lib/rag/chunk-embeddings";
 
 // Whole-file base64 round-trips through the calling model's context twice
 // (propose then approve), so cap it well below typical MCP message limits.
@@ -143,6 +143,17 @@ async function persistFileUpload(input: {
     await uploadFileToStorage(storageKey, buffer, "application/pdf");
   }
 
+  const effectiveReviewTriage = storageFallbackNotice
+    ? {
+        ...proposal.reviewTriage,
+        disposition: "NEEDS_REVIEW" as const,
+        priority: proposal.reviewTriage.priority === "HIGH" ? ("HIGH" as const) : ("MEDIUM" as const),
+        summary: `${proposal.reviewTriage.summary} Storage fallback also needs review.`,
+        reasons: [...proposal.reviewTriage.reasons, storageFallbackNotice],
+        recommendedAction: "Review the extracted text and decide whether the original file needs to be stored later.",
+      }
+    : proposal.reviewTriage;
+
   const result = await prisma.$transaction(async (tx) => {
     const collection = proposal.shouldCreateCollection
       ? await tx.ragCollection.create({
@@ -175,6 +186,7 @@ async function persistFileUpload(input: {
             fileStored: willStoreFile,
             warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
             placementReview: proposal.placementReview,
+            reviewTriage: effectiveReviewTriage,
           },
           proposal.chunkPlan.map((chunk) => chunk.chunkText).join("\n\n"),
         ),
@@ -192,7 +204,10 @@ async function persistFileUpload(input: {
           tokenCount: chunk.tokenCount,
           pageNumber: chunk.pageNumber,
           status: "PENDING_REVIEW",
-          metadata: withContentFingerprint(withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases), chunk.chunkText),
+          metadata: withContentFingerprint(
+            withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: effectiveReviewTriage }, chunk.retrievalAliases),
+            chunk.chunkText,
+          ),
         },
       });
 
@@ -589,6 +604,7 @@ server.registerTool(
               insertedBy: "rag-manager-mcp",
               warnings: proposal.warnings,
               placementReview: proposal.placementReview,
+              reviewTriage: proposal.reviewTriage,
             },
             proposal.chunkPlan.map((chunk) => chunk.chunkText).join("\n\n"),
           ),
@@ -606,7 +622,10 @@ server.registerTool(
             tokenCount: chunk.tokenCount,
             pageNumber: chunk.pageNumber,
             status: "PENDING_REVIEW",
-            metadata: withContentFingerprint(withRetrievalAliases({ insertedBy: "rag-manager-mcp" }, chunk.retrievalAliases), chunk.chunkText),
+            metadata: withContentFingerprint(
+              withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: proposal.reviewTriage }, chunk.retrievalAliases),
+              chunk.chunkText,
+            ),
           },
         });
 
@@ -1045,6 +1064,33 @@ server.registerTool(
   },
 );
 
+function getReviewTriage(metadata: unknown) {
+  const triage = metadataRecord(metadata).reviewTriage;
+  return triage && typeof triage === "object" && !Array.isArray(triage) ? (triage as Record<string, unknown>) : null;
+}
+
+function triageDisposition(metadata: unknown) {
+  const disposition = getReviewTriage(metadata)?.disposition;
+  return typeof disposition === "string" ? disposition : "NEEDS_REVIEW";
+}
+
+function summarizePendingReviewQueue(items: Array<{ metadata: unknown }>) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const disposition = triageDisposition(item.metadata);
+    counts.set(disposition, (counts.get(disposition) ?? 0) + 1);
+  }
+
+  return {
+    total: items.length,
+    readyForBatchApproval: counts.get("READY_FOR_BATCH_APPROVAL") ?? 0,
+    needsReview: counts.get("NEEDS_REVIEW") ?? 0,
+    conflictsWithApproved: counts.get("CONFLICTS_WITH_APPROVED") ?? 0,
+    duplicateOrUpdateCandidates: counts.get("DUPLICATE_OR_UPDATE_CANDIDATE") ?? 0,
+    recommendedOrder: ["CONFLICTS_WITH_APPROVED", "DUPLICATE_OR_UPDATE_CANDIDATE", "NEEDS_REVIEW", "READY_FOR_BATCH_APPROVAL"],
+  };
+}
+
 server.registerTool(
   "list_pending_reviews",
   {
@@ -1073,7 +1119,13 @@ server.registerTool(
       }),
     ]);
 
-    return jsonResult({ documents, chunks });
+    return jsonResult({
+      summary: summarizePendingReviewQueue([...documents, ...chunks]),
+      documents,
+      chunks,
+      reviewGuidance:
+        "Review high-risk buckets first. READY_FOR_BATCH_APPROVAL means the item looks clean, but it is still not trusted or visible to chat until a human approves the chunks.",
+    });
   },
 );
 

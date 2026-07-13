@@ -50,7 +50,7 @@ mcp/
                               exports `server` so http.ts can reuse the same tool registry
     http.ts                   Optional HTTP transport (npm run mcp:rag-manager:http), localhost-only
                               by default — same tools as stdio, for clients that can't spawn a
-                              stdio subprocess (e.g. a future review dashboard)
+                              stdio subprocess; `/review` does not use this transport
     extraction.ts              PDF text extraction (pdf-parse) + OCR fallback (tesseract.js)
     proposal.ts              Builds and validates source-insert / file-upload proposals
     chunking.ts               Paragraph-based and page-aware chunking; estimateTokens() is shared

@@ -17,14 +17,14 @@ This project is intentionally domain-agnostic. The database schema uses generic 
 
 This project draws a hard line between reading the knowledge base and managing it. Each side has exactly one job:
 
-- **Chat application (`app/`)** — a **read-only** viewer. Its only purpose is to search and answer questions using the `APPROVED` knowledge base, so you can test retrieval quality and see what the knowledge base currently contains. It has no code path that creates, edits, approves, rejects, archives, or deletes anything. It cannot write to the database, full stop.
+- **Chat application (`app/`)** — a viewer for testing `APPROVED` knowledge, plus a local-only `/review` page for the builder to approve/reject pending chunks and harness rules. The chat/collections/harness/API surfaces stay read-only; `/review` is guarded separately and is not a public admin panel.
 - **MCP server (`mcp/rag-manager`)** — the **only** component authorized to manage the knowledge base and the chat's own behavioral rules (its "harness"). All creation, editing, approval, rejection, archiving, review, feedback, eval-case, and harness-rule management happens here, gated by a propose-then-approve workflow (see [MCP Server](mcp-server.md)).
 
 If you ever find yourself wiring a write operation into `app/`, that's a sign it belongs in the MCP server instead. See [System Architecture](architecture.md) for the enforced boundary.
 
 ## What's included
 
-- A read-only Next.js chat app that answers questions using a local model (via Ollama) plus approved RAG context — a retrieval viewer, not an admin panel.
+- A Next.js local testing app that answers questions using a local model (via Ollama) plus approved RAG context, with a guarded `/review` page for pending approval decisions — not a hosted admin panel.
 - A Prisma schema modeling collections, documents, chunks, sources, reviews, feedback, eval cases, assistant identity, and harness rules.
 - An isolated MCP server (`mcp/rag-manager`) that manages the knowledge base and the chat's harness (its configurable capabilities/restrictions) with a human-in-the-loop write path.
 - A seed script that documents the project itself, so you have working data to query immediately.

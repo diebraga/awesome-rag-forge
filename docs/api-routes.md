@@ -159,7 +159,7 @@ There is intentionally no graph/visualization layer here — an earlier version 
 
 ## `GET /api/rag/harness`
 
-Read-only testing endpoint: the chat's identity and its `APPROVED` capabilities/restrictions, without the retrieval call `GET /api/rag/context` also makes — backs the [Harness page](#the-harness-page). This is display-only; harness proposal, approval, rejection, and review stay MCP-only.
+Read-only testing endpoint: the chat's identity and its `APPROVED` capabilities/restrictions, without the retrieval call `GET /api/rag/context` also makes — backs the [Harness page](#the-harness-page). This endpoint is display-only; harness proposal and management stay outside the API, with pending review handled through MCP or the guarded local `/review` page.
 
 ```json
 {
@@ -175,7 +175,7 @@ See `lib/rag/chat-context.ts` (`getAssistantConfig`), `lib/rag/harness.ts` (`get
 
 ### The Harness page
 
-`app/harness/page.tsx` shows the same identity and `APPROVED` capabilities/restrictions that are baked into the chat's system prompt — as a simple list, since there's nothing structural to visualize here. Same audience and visibility rules as the chat and the Collections pages: read-only, `APPROVED`-only. Changing any of this only ever happens through the MCP server's `propose_harness_update` → `approve_harness_update` → `approve_harness_rule`/`reject_harness_rule` flow (see [MCP Server](mcp-server.md#harness-rules-propose--approve--review)) — nothing on this page is editable.
+`app/harness/page.tsx` shows the same identity and `APPROVED` capabilities/restrictions that are baked into the chat's system prompt — as a simple list, since there's nothing structural to visualize here. Same audience and visibility rules as the chat and the Collections pages: read-only, `APPROVED`-only. Changing any of this starts through the MCP server's `propose_harness_update` → `approve_harness_update` flow (see [MCP Server](mcp-server.md#harness-rules-propose--approve--review)); final pending approval/rejection can happen through MCP or the guarded local `/review` page. Nothing on the Harness page itself is editable.
 
 ## `GET /api/ollama/status`
 

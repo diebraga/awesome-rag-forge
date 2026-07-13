@@ -2,22 +2,24 @@
 
 ## The core boundary: read vs. write
 
-This project has exactly one read path and exactly one write path, and they are different components:
+This project keeps normal use and knowledge management separate. The default path is read-only chat/UI, while knowledge management belongs to the MCP server. A narrow local-only `/review` dashboard exists for human approval after content is already pending review.
 
 | | Chat application (`app/`) | MCP server (`mcp/rag-manager`) |
 | --- | --- | --- |
-| Role | Read-only RAG viewer | Exclusive knowledge & harness manager |
-| Purpose | Test retrieval, answer questions, demonstrate the current knowledge base | Propose, review, and persist knowledge and harness rule changes |
+| Role | Read-only RAG viewer, plus local-only review dashboard | Exclusive knowledge & harness manager |
+| Purpose | Test retrieval, answer questions, demonstrate approved knowledge; locally approve/reject pending review items | Propose, organize, persist, archive, and correct knowledge/harness changes |
 | Can create collections/documents/chunks? | **No** | Yes, after approval |
-| Can approve/reject/archive? | **No** | Yes |
-| Can change harness capabilities/restrictions? | **No** | Yes, after propose → approve → human review |
+| Can approve/reject/archive? | `/review` can approve/reject pending chunks and harness rules locally only; no archive | Yes |
+| Can change harness capabilities/restrictions? | `/review` can approve/reject pending rules only | Yes, after propose → approve → human review |
 | Can delete anything? | **No** | No delete tools are exposed yet either — see [MCP Server](mcp-server.md) |
-| Reads from DB? | Yes — `APPROVED` chunks/documents/harness rules only | Yes — all statuses, for review and search |
-| Writes to DB? | **Only `RagFeedback`, via `POST /api/feedback`** (see below) | Yes, exclusively through propose → approve workflows |
+| Reads from DB? | Normal UI: `APPROVED` only. `/review`: pending chunks/rules only | Yes — all statuses, for review and search |
+| Writes to DB? | **`RagFeedback` in normal chat/UI; `/review` approve/reject server actions locally only** (see below) | Yes, through propose → approve workflows |
 
-The chat app has no MCP client and no tool-calling loop — it is a plain request/response chat backed by [`lib/rag/retrieval.ts`](../lib/rag/retrieval.ts). There is nothing in `app/` capable of mutating `RagCollection`, `RagDocument`, `RagChunk`, `RagSource`, `RagReview`, `RagEvalCase`, or `HarnessRule` — none of those have a write path outside `mcp/rag-manager/server.ts`, run as a separate process. `RagFeedback` is the one exception, and it's deliberately narrow: `app/api/feedback/route.ts` can create a `RagFeedback` row (a thumbs up/down on an answer, from the chat UI) and nothing else — it has no code path to any other table. This exists because end-user reaction to an already-approved answer isn't a knowledge-base change; it doesn't need the propose/approve workflow because it can't affect what the assistant knows or does, only what gets recorded as feedback for a human to review later (via the MCP server's `add_feedback`/future review tooling — feedback submitted through the chat UI and feedback submitted through MCP land in the same table, read the same way). If you're ever tempted to widen this route's reach beyond `RagFeedback`, don't — that write belongs in the MCP server, gated like everything else.
+The chat app has no MCP client and no tool-calling loop — it is a plain request/response chat backed by [`lib/rag/retrieval.ts`](../lib/rag/retrieval.ts). Normal end-user routes in `app/` cannot mutate `RagCollection`, `RagDocument`, `RagChunk`, `RagSource`, `RagReview`, `RagEvalCase`, or `HarnessRule`. `RagFeedback` is the one end-user exception, and it's deliberately narrow: `app/api/feedback/route.ts` can create a `RagFeedback` row (a thumbs up/down on an answer, from the chat UI) and nothing else — it has no code path to any other table. This exists because end-user reaction to an already-approved answer isn't a knowledge-base change; it doesn't need the propose/approve workflow because it can't affect what the assistant knows or does, only what gets recorded as feedback for a human to review later.
 
-Opening the browser does not connect the user to the MCP server. The browser UI and its HTTP routes are deliberately read-only testing surfaces over approved data; they should not proxy MCP tools or become a browser-based MCP client. RAG and harness management requires a separate MCP-capable client configured to launch `npm run mcp:rag-manager` from this repository's local checkout.
+`/review` is a separate builder-only exception, not part of the chat surface and not an MCP client. It reads pending `RagChunk` and `HarnessRule` rows directly from Postgres and uses server actions to approve/reject them, guarded by `assertLocalReviewMode()` so it only works with `ENABLE_TESTING_SURFACE=true` outside production/public runtimes. Do not turn this into a public API, a Swagger-documented route, or a general admin panel.
+
+Opening the browser does not connect the user to the MCP server. The browser UI and its HTTP routes are deliberately testing surfaces over approved data; they should not proxy MCP tools or become a browser-based MCP client. RAG and harness creation, organization, correction, archival, and file ingestion require a separate MCP-capable client configured to launch `npm run mcp:rag-manager` from this repository's local checkout. `/review` only handles the final local approval/rejection queue for pending chunks and harness rules.
 
 One narrow exception exists outside the database entirely: `POST /api/ollama/start` can launch the Ollama process itself, so the chat UI's "Connect to Ollama" button works without a terminal. It never touches Prisma, and it's locked to local dev only (see [Security Considerations](security.md#post-apiollamastart-executes-a-process--scoped-deliberately)).
 
@@ -54,7 +56,7 @@ An earlier version of this feature rendered collections as a node graph (`@xyflo
 
 **The Harness page (`app/harness/`) is the same pattern applied to identity/harness data instead of knowledge.** It reads `getAssistantConfig()` (from `chat-context.ts`) and `getApprovedHarnessRules()` (from `harness.ts`) directly and renders them as a plain list — no graph, since there's no structure to visualize, just a handful of strings. Same audience, same `APPROVED`-only rule, same "read-only, no write path" boundary as everything else in `app/`.
 
-Deliberately excluded from both pages: `RagReview` (approval/rejection audit trail), `RagFeedback` (user-submitted ratings/comments that were never reviewed for display), and `RagEvalCase` (testing artifacts). Those are creator/operational concerns — if you ever build a view for them, it belongs behind the MCP server's tools (`list_pending_reviews`, etc.), not on this read-only, end-user-facing surface.
+Deliberately excluded from the chat, collections, and harness end-user surfaces: `RagReview` (approval/rejection audit trail), `RagFeedback` (user-submitted ratings/comments that were never reviewed for display), and `RagEvalCase` (testing artifacts). Those are creator/operational concerns. The local-only `/review` page may show pending chunks and pending harness rules for approval, but it must stay outside the public/API surface and keep the production guard.
 
 ## Chat path (read-only)
 

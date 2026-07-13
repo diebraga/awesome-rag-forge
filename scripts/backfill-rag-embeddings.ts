@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { prisma, disconnectPrisma } from "../mcp/rag-manager/prisma";
-import { embedChunkForApproval, storeChunkEmbedding } from "../mcp/rag-manager/chunk-embeddings";
+import { embedChunkForApproval, storeChunkEmbedding } from "../lib/rag/chunk-embeddings";
 
 async function main() {
   const chunks = await prisma.ragChunk.findMany({
