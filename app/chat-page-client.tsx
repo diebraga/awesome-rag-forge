@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { describeSpeechRecognitionError, getSpeechTranscript, createSpeechRecognition, shouldRestartSpeechRecognition, type BrowserSpeechRecognizer } from "./speech-recognition";
 import { createSpeechUtterance } from "./speech-synthesis";
+import { getChatSurfaceMode } from "./chat-surface-mode";
 import { getTypewriterStep, getTypewriterText } from "./typewriter";
 
 type ChatSource = {
@@ -117,6 +118,46 @@ function PersonAvatar() {
   );
 }
 
+function ChatBootSkeleton() {
+  return (
+    <main className="flex h-full flex-col bg-white px-4 py-6 text-black">
+      <section className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col gap-4">
+        <header className="shrink-0 space-y-1.5">
+          <Skeleton className="h-3 w-40 bg-black/10" />
+          <Skeleton className="h-6 w-56 bg-black/10" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full bg-black/10" />
+            <Skeleton className="h-4 w-4/5 bg-black/10" />
+          </div>
+        </header>
+
+        <div className="flex min-h-[62px] shrink-0 items-center gap-3 rounded-xl border border-black/10 px-4 py-3">
+          <Skeleton className="h-9 w-36 rounded-lg bg-black/10" />
+          <Skeleton className="h-4 flex-1 bg-black/10" />
+          <Skeleton className="h-8 w-24 rounded-lg bg-black/10" />
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 py-1 pr-2">
+          <div className="flex items-end gap-3">
+            <Skeleton className="size-8 shrink-0 rounded-full bg-black/10" />
+            <div className="min-h-24 w-full max-w-[82%] rounded-2xl rounded-bl-md border bg-muted px-4 py-3">
+              <Skeleton className="h-3 w-11/12 bg-black/10" />
+              <Skeleton className="mt-2 h-3 w-4/5 bg-black/10" />
+              <Skeleton className="mt-2 h-3 w-2/3 bg-black/10" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex min-h-[60px] w-full shrink-0 items-center gap-2 rounded-2xl border border-black/10 bg-white p-2 shadow-sm">
+          <Skeleton className="h-11 flex-1 rounded-xl bg-black/10" />
+          <Skeleton className="size-11 rounded-xl bg-black/10" />
+          <Skeleton className="size-11 rounded-xl bg-black/10" />
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export default function Home() {
   const [assistantName, setAssistantName] = useState("this assistant");
   const [messages, setMessages] = useState<ChatMessage[]>(() => buildInitialMessages("this assistant"));
@@ -126,6 +167,9 @@ export default function Home() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(null);
+  const [providersLoaded, setProvidersLoaded] = useState(false);
+  const [assistantNameLoaded, setAssistantNameLoaded] = useState(false);
+  const [ollamaStatusLoaded, setOllamaStatusLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const speechRecognitionRef = useRef<BrowserSpeechRecognizer | null>(null);
   const keepListeningRef = useRef(false);
@@ -160,7 +204,12 @@ export default function Home() {
   const modelReady = selectedProvider?.id === "ollama" ? installedModels.includes(selectedModel) : Boolean(selectedProvider?.configured);
   const providerReady = selectedProvider?.id === "ollama" ? serverStatus === "connected" && modelReady : Boolean(selectedProvider?.configured);
   const showProviderSetup = Boolean(selectedProvider && selectedProvider.id !== "ollama" && !selectedProvider.configured);
-  const showProviderChooser = !selectedProvider || showProviderSetup;
+  const bootReady = providersLoaded && assistantNameLoaded && ollamaStatusLoaded;
+  const surfaceMode = getChatSurfaceMode({
+    bootReady,
+    hasSelectedProvider: Boolean(selectedProvider),
+    showProviderSetup,
+  });
   const chatDisabled = isLoading || !providerReady;
   const hasPendingAssistantMessage = messages.some((message) => message.isPending);
 
@@ -199,6 +248,8 @@ export default function Home() {
       );
     } catch {
       // The database/setup readiness screens already handle unavailable state.
+    } finally {
+      setAssistantNameLoaded(true);
     }
   }
 
@@ -218,6 +269,8 @@ export default function Home() {
       }
     } catch {
       // Keep the chooser empty; API readiness banners handle auth/setup errors.
+    } finally {
+      setProvidersLoaded(true);
     }
   }
 
@@ -250,9 +303,11 @@ export default function Home() {
       setCanAutoStart(data.canAutoStart);
       setSelectedModel((current) => current || data.availableModels?.[0] || "");
       setServerStatus(data.running ? "connected" : "disconnected");
+      setOllamaStatusLoaded(true);
       return data;
     } catch {
       setServerStatus("disconnected");
+      setOllamaStatusLoaded(true);
       return null;
     }
   }
@@ -596,7 +651,11 @@ export default function Home() {
     }
   }
 
-  if (showProviderChooser) {
+  if (surfaceMode === "booting") {
+    return <ChatBootSkeleton />;
+  }
+
+  if (surfaceMode === "provider") {
     return (
       <main className="flex h-full flex-col bg-white px-4 py-6 text-black">
         <section className="mx-auto flex w-full max-w-2xl min-h-0 flex-1 flex-col gap-4">
