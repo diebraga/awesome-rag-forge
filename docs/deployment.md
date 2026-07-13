@@ -8,6 +8,8 @@ The full app below — chat, Collections, Harness, `/review`, the MCP server, ev
 
 Deployable to GitHub Pages directly from the repo, or any static host (Netlify, Cloudflare Pages, S3 + CloudFront, etc.) — point the host at the `public-site/` directory. Because there is no framework and no route table, there is structurally nothing else this deployable could leak: it cannot ship a route, an API handler, or a database credential it doesn't have. That's a stronger guarantee than gating the full app's routes with `ENABLE_TESTING_SURFACE`, achieved by having less code, not by checking harder.
 
+For Vercel, this repository commits that boundary in [`vercel.json`](../vercel.json): `framework` is `null` (Vercel's `Other` preset), `installCommand` and `buildCommand` are empty, and `outputDirectory` is `public-site`. That means a production deploy serves the README renderer only; it does not install dependencies, does not run `next build`, and does not ship `app/`, `app/api`, `/review`, MCP code, Prisma, or local setup helpers as a hosted app. If a Vercel project dashboard overrides these settings, put them back to: Framework Preset `Other`, Build Command empty, Install Command empty, Output Directory `public-site`.
+
 Never add server code, API calls beyond the README fetch, or a build step to `public-site/` — the moment it needs a `package.json` or a route, it stops being the thing that makes this guarantee true. See `docs/superpowers/specs/2026-07-13-public-site-split-design.md` for the full design reasoning.
 
 ## Three separate things

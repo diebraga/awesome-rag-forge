@@ -4,12 +4,12 @@ import { buildSourceProposal } from "./proposal";
 describe("buildSourceProposal", () => {
   it("surfaces retrieval aliases in the human-reviewable chunk plan", async () => {
     const proposal = await buildSourceProposal({
-      title: "Coase Index reference",
-      sourceText: "Coase is a startup building an index for franchise disclosure documents.",
+      title: "Aurelia Index reference",
+      sourceText: "Aurelia is a startup building an index for franchise disclosure documents.",
       sourceType: "NOTE",
-      category: "strategy",
-      domain: "Coase",
-      tags: ["franchise"],
+      category: "synthetic-proposal-test",
+      domain: "AureliaNeverExisting",
+      tags: ["synthetic-franchise-test"],
     });
 
     expect(proposal.chunkPlan[0]?.retrievalAliases).toContain("company");

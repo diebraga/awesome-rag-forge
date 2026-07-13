@@ -165,7 +165,9 @@ The local testing UI includes `/review`, a human-friendly review queue for pendi
 
 ## Public site
 
-Everything above is local-only by design. If you want a public URL for this project, it's [`public-site/index.html`](public-site/index.html) — a single static HTML file with no framework, no build step, and no server code. It fetches and renders this repo's `README.md` live from GitHub, so editing docs and pushing updates the live page with no redeploy. Deployable to GitHub Pages or any static host. See [Deployment](docs/deployment.md#the-only-thing-meant-to-be-deployed-publicly-public-site) for why this is the only thing meant to be deployed, and how it makes that guarantee structurally rather than by convention.
+Everything above is local-only by design. If you want a public URL for this project, it's [`public-site/index.html`](public-site/index.html) — a single static HTML file with no framework, no build step, and no server code. It fetches and renders this repo's `README.md` live from GitHub, so editing docs and pushing updates the live page with no redeploy.
+
+This repository includes [`vercel.json`](vercel.json) to make Vercel deploy only `public-site/`: the framework preset is `Other`, install/build commands are empty, and the output directory is `public-site`. Production must never run `next build`; the full Next.js app, API routes, MCP server, review UI, database workflows, and provider setup flows are local-only. See [Deployment](docs/deployment.md#the-only-thing-meant-to-be-deployed-publicly-public-site) for why this is the only thing meant to be deployed, and how it makes that guarantee structurally rather than by convention.
 
 ## Documentation
 

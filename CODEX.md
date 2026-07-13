@@ -57,6 +57,7 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 - Never let a harness rule (`HarnessRule`) grant a capability the code doesn't already enforce. Hardcoded identity/read-only rules always render before and win over harness config — see [docs/rag.md](docs/rag.md#the-harness-capabilities-and-restrictions). Keep `lib/rag/harness.ts`'s hardcoded blocklist; don't replace it with prompt-only guidance.
 - Never add or restore domain-specific fields (e.g. legal/medical-only vocabulary) to the shared schema — use `category`/`domain`/`tags`/`metadata`.
 - Never deploy, push, or provision hosted infrastructure unless explicitly asked in the moment.
+- Production/public deployment is docs-only: Vercel must use `vercel.json` with framework `Other`, empty install/build commands, and `public-site` as the output directory. Never change production deploys to run `next build` or ship `app/`, `app/api`, `/review`, MCP code, Prisma, or local setup helpers.
 - Never add server code, a build step, or a route to `public-site/`. It's the one thing meant to ever be deployed publicly, and its entire security guarantee is having nothing else to leak — see [Deployment](docs/deployment.md#the-only-thing-meant-to-be-deployed-publicly-public-site).
 
 ## Connecting this server to Codex
