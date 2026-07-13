@@ -1,6 +1,6 @@
 # Project Overview
 
-**awesome-rag-forge** is a generic RAG (retrieval-augmented generation) knowledge base builder. Instead of a manual admin panel, you build, organize, and review your knowledge base by talking to an AI assistant connected through an MCP (Model Context Protocol) server.
+**awesome-rag-forge** is a generic RAG (retrieval-augmented generation) knowledge base builder. Instead of a manual admin panel, you build and organize your knowledge base by talking to an AI assistant connected through an MCP (Model Context Protocol) server; clean knowledge becomes live immediately, while ambiguous/problematic knowledge is routed to review.
 
 ## Core idea
 
@@ -8,7 +8,7 @@
 2. The assistant inspects the current knowledge base through MCP tools.
 3. The assistant proposes where new knowledge should go: which collection, what chunking plan, what metadata.
 4. You approve or reject the proposal.
-5. Only after approval does the assistant write to the database, and new knowledge always starts as `PENDING_REVIEW`.
+5. Only after explicit user approval does the assistant write to the database. Clean knowledge is saved as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with a clear review reason.
 6. A separate chat UI (the Next.js app) answers user questions using only `APPROVED` knowledge.
 
 This project is intentionally domain-agnostic. The database schema uses generic fields (`category`, `domain`, `tags`, `metadata`) instead of any single vertical's vocabulary, so you can use it for product docs, internal wikis, support knowledge bases, research notes, or anything else.

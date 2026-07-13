@@ -29,6 +29,7 @@ import { buildHarnessProposal } from "../../lib/rag/harness";
 import { withRetrievalAliases } from "../../lib/rag/retrieval-enrichment";
 import { withContentFingerprint } from "./placement-intelligence";
 import { embedChunkForApproval, storeChunkEmbedding } from "../../lib/rag/chunk-embeddings";
+import { knowledgePersistencePolicy } from "./review-policy";
 
 // Whole-file base64 round-trips through the calling model's context twice
 // (propose then approve), so cap it well below typical MCP message limits.
@@ -161,6 +162,8 @@ async function persistFileUpload(input: {
       }
     : proposal.reviewTriage;
 
+  const persistencePolicy = knowledgePersistencePolicy(effectiveReviewTriage);
+
   const result = await prisma.$transaction(async (tx) => {
     const collection = proposal.shouldCreateCollection
       ? await tx.ragCollection.create({
@@ -188,7 +191,7 @@ async function persistFileUpload(input: {
         tags: proposal.proposedDocument.tags,
         audience: proposal.proposedDocument.audience,
         visibility: proposal.proposedDocument.visibility,
-        status: "PENDING_REVIEW",
+        status: persistencePolicy.documentStatus,
         storageKey,
         metadata: withContentFingerprint(
           {
@@ -198,6 +201,7 @@ async function persistFileUpload(input: {
             warnings: storageFallbackNotice ? [...proposal.warnings, storageFallbackNotice] : proposal.warnings,
             placementReview: proposal.placementReview,
             reviewTriage: effectiveReviewTriage,
+            reviewReason: persistencePolicy.reviewReason,
           },
           proposal.chunkPlan.map((chunk) => chunk.chunkText).join("\n\n"),
         ),
@@ -214,9 +218,9 @@ async function persistFileUpload(input: {
           sectionTitle: chunk.sectionTitle,
           tokenCount: chunk.tokenCount,
           pageNumber: chunk.pageNumber,
-          status: "PENDING_REVIEW",
+          status: persistencePolicy.chunkStatus,
           metadata: withContentFingerprint(
-            withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: effectiveReviewTriage }, chunk.retrievalAliases),
+            withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: effectiveReviewTriage, reviewReason: persistencePolicy.reviewReason }, chunk.retrievalAliases),
             chunk.chunkText,
           ),
         },
@@ -239,7 +243,7 @@ async function persistFileUpload(input: {
     return { collection, document, chunks };
   });
 
-  return { result, willStoreFile, storageFallbackNotice };
+  return { result, willStoreFile, storageFallbackNotice, persistencePolicy };
 }
 
 function collectionSignature(proposal: SourceProposal) {
@@ -583,7 +587,7 @@ server.registerTool(
   "approve_source_insert",
   {
     title: "Approve source insert",
-    description: "Persist a previously approved source proposal into the RAG database. Refuses to write unless userApproval is true.",
+    description: "Persist a previously approved source proposal into the RAG database. Clean knowledge is saved directly as APPROVED; ambiguous/problematic knowledge is routed to PENDING_REVIEW with reviewRequired=true and reviewReason explaining why. Refuses to write unless userApproval is true.",
     inputSchema: {
       proposal: proposalSchema,
       userApproval: z.boolean(),
@@ -593,6 +597,8 @@ server.registerTool(
     if (!userApproval) {
       return textResult("Refused to write. userApproval must be true before saving knowledge.");
     }
+
+    const persistencePolicy = knowledgePersistencePolicy(proposal.reviewTriage);
 
     const result = await prisma.$transaction(async (tx) => {
       const collection = proposal.shouldCreateCollection
@@ -622,13 +628,14 @@ server.registerTool(
           tags: proposal.proposedDocument.tags,
           audience: proposal.proposedDocument.audience,
           visibility: proposal.proposedDocument.visibility,
-          status: "PENDING_REVIEW",
+          status: persistencePolicy.documentStatus,
           metadata: withContentFingerprint(
             {
               insertedBy: "rag-manager-mcp",
               warnings: proposal.warnings,
               placementReview: proposal.placementReview,
               reviewTriage: proposal.reviewTriage,
+              reviewReason: persistencePolicy.reviewReason,
             },
             proposal.chunkPlan.map((chunk) => chunk.chunkText).join("\n\n"),
           ),
@@ -645,9 +652,9 @@ server.registerTool(
             sectionTitle: chunk.sectionTitle,
             tokenCount: chunk.tokenCount,
             pageNumber: chunk.pageNumber,
-            status: "PENDING_REVIEW",
+            status: persistencePolicy.chunkStatus,
             metadata: withContentFingerprint(
-              withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: proposal.reviewTriage }, chunk.retrievalAliases),
+              withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: proposal.reviewTriage, reviewReason: persistencePolicy.reviewReason }, chunk.retrievalAliases),
               chunk.chunkText,
             ),
           },
@@ -673,7 +680,11 @@ server.registerTool(
 
     return jsonResult({
       ...result,
-      message: "Source saved as PENDING_REVIEW. A human reviewer must approve chunks before the live chat should rely on them.",
+      reviewRequired: persistencePolicy.requiresReview,
+      reviewReason: persistencePolicy.reviewReason,
+      message: persistencePolicy.requiresReview
+        ? `Source routed to review: ${persistencePolicy.reviewReason.title}. ${persistencePolicy.reviewReason.summary}`
+        : "Source added directly to the brain as APPROVED. It is available to retrieval immediately.",
     });
   },
 );
@@ -767,7 +778,7 @@ server.registerTool(
   {
     title: "Approve file upload",
     description:
-      "Persist a previously proposed file upload (document + page-numbered chunks) into the RAG database as PENDING_REVIEW. Refuses to write unless userApproval is true. Set storeOriginalFile: true to also upload the original file to storage; if storage isn't configured (STORAGE_BUCKET/STORAGE_ACCESS_KEY_ID/STORAGE_SECRET_ACCESS_KEY), this does NOT refuse the whole request — it falls back to saving only the extracted text/chunks and says so clearly in the response, rather than dead-ending with an error. Set storeOriginalFile: false to save only the extracted text/chunks outright, with no storage requirement. The calling assistant must have already asked the user which of these two they want — never assume.",
+      "Persist a previously proposed file upload (document + page-numbered chunks) into the RAG database. Clean extracted knowledge is saved directly as APPROVED; ambiguous/problematic uploads are routed to PENDING_REVIEW with reviewRequired=true and reviewReason explaining why. Refuses to write unless userApproval is true. Set storeOriginalFile: true to also upload the original file to storage; if storage isn't configured (STORAGE_BUCKET/STORAGE_ACCESS_KEY_ID/STORAGE_SECRET_ACCESS_KEY), this does NOT refuse the whole request — it falls back to saving only the extracted text/chunks and routes the item to review. Set storeOriginalFile: false to save only the extracted text/chunks outright, with no storage requirement. The calling assistant must have already asked the user which of these two they want — never assume.",
     inputSchema: {
       proposal: proposalSchema,
       fileName: z.string().min(1),
@@ -781,7 +792,7 @@ server.registerTool(
       return textResult("Refused to write. userApproval must be true before saving an uploaded file.");
     }
 
-    const { result, willStoreFile, storageFallbackNotice } = await persistFileUpload({
+    const { result, willStoreFile, storageFallbackNotice, persistencePolicy } = await persistFileUpload({
       proposal,
       fileName,
       fileBase64,
@@ -791,11 +802,13 @@ server.registerTool(
     return jsonResult({
       ...result,
       storageFallback: storageFallbackNotice,
-      message: willStoreFile
-        ? "File uploaded and its text saved as PENDING_REVIEW. A human reviewer must approve its chunks before the live chat can rely on them or the file becomes downloadable (downloads require an APPROVED document)."
-        : storageFallbackNotice
-          ? `${storageFallbackNotice} Its extracted text was still saved as PENDING_REVIEW. A human reviewer must approve its chunks before the live chat can rely on them.`
-          : "Extracted text saved as PENDING_REVIEW; the original file was not stored (storeOriginalFile was false). A human reviewer must approve its chunks before the live chat can rely on them.",
+      reviewRequired: persistencePolicy.requiresReview,
+      reviewReason: persistencePolicy.reviewReason,
+      message: persistencePolicy.requiresReview
+        ? `File text routed to review: ${persistencePolicy.reviewReason.title}. ${persistencePolicy.reviewReason.summary}`
+        : willStoreFile
+          ? "File uploaded and its text added directly to the brain as APPROVED. The original file is downloadable immediately."
+          : "Extracted text added directly to the brain as APPROVED; the original file was not stored.",
     });
   },
 );
@@ -805,7 +818,7 @@ server.registerTool(
   {
     title: "Approve multiple file uploads",
     description:
-      "Persist previously proposed PDF uploads into the RAG database as PENDING_REVIEW, one document per PDF. Refuses to write unless userApproval is true. Each item can choose storeOriginalFile true/false. If storage is requested but bucket env vars are missing, that item falls back to extracted text only and says so clearly. The calling assistant must ask the user to approve the organization and storage choice before calling this tool.",
+      "Persist previously proposed PDF uploads into the RAG database, one document per PDF. Clean files are saved directly as APPROVED; ambiguous/problematic files are routed to PENDING_REVIEW with reviewRequired=true and reviewReason explaining why. Refuses to write unless userApproval is true. Each item can choose storeOriginalFile true/false. If storage is requested but bucket env vars are missing, that item falls back to extracted text only and routes to review. The calling assistant must ask the user to approve the organization and storage choice before calling this tool.",
     inputSchema: {
       files: z.array(
         z.object({
@@ -842,7 +855,7 @@ server.registerTool(
         };
       }
 
-      const { result, willStoreFile, storageFallbackNotice } = await persistFileUpload({
+      const { result, willStoreFile, storageFallbackNotice, persistencePolicy } = await persistFileUpload({
         ...file,
         proposal,
       });
@@ -856,13 +869,15 @@ server.registerTool(
         ...result,
         fileStored: willStoreFile,
         storageFallback: storageFallbackNotice,
+        reviewRequired: persistencePolicy.requiresReview,
+        reviewReason: persistencePolicy.reviewReason,
       });
     }
 
     return jsonResult({
       files: saved,
       message:
-        "Uploaded PDF text saved as PENDING_REVIEW, one document per file. Files with the same proposed collection were grouped into one collection. A human reviewer must approve chunks before the live chat uses them. Original files are downloadable only for approved documents whose storeOriginalFile choice succeeded.",
+        "Uploaded PDF text saved. Clean files are added directly to the brain as APPROVED; ambiguous/problematic files are routed to review with reviewRequired=true and reviewReason explaining why. Files with the same proposed collection were grouped into one collection.",
     });
   },
 );

@@ -2,7 +2,7 @@
 
 ## The core boundary: read vs. write
 
-This project keeps normal use and knowledge management separate. The default path is read-only chat/UI, while knowledge management belongs to the MCP server. A narrow local-only `/review` dashboard exists for human approval after content is already pending review.
+This project keeps normal use and knowledge management separate. The default path is read-only chat/UI, while knowledge management belongs to the MCP server. A narrow local-only `/review` dashboard exists for human approval when content is routed to pending review.
 
 | | Chat application (`app/`) | MCP server (`mcp/rag-manager`) |
 | --- | --- | --- |
@@ -99,9 +99,9 @@ The MCP server is the only place new knowledge or harness rules are proposed and
 **Knowledge:**
 1. A user (via an MCP client) asks the assistant to add a source.
 2. The assistant calls `propose_source_insert`, which returns a proposal without touching the database.
-3. The user reviews the proposal and approves it.
-4. The assistant calls `approve_source_insert` with `userApproval: true`, which creates a document and chunks with `status: PENDING_REVIEW` plus the approved `audience`/`visibility` boundary. New proposals infer this boundary from the source text and inherit it from an explicitly selected collection unless the user overrides it.
-5. A human reviewer calls `approve_chunk` (or `reject_chunk`) via the assistant.
+3. The user reviews the proposal and approves the write.
+4. The assistant calls `approve_source_insert` with `userApproval: true`. Clean knowledge is created as `APPROVED` and becomes available to retrieval immediately; ambiguous/problematic knowledge is created as `PENDING_REVIEW` with `reviewReason` metadata explaining why. New proposals infer audience/visibility from the source text and inherit it from an explicitly selected collection unless the user overrides it.
+5. For items routed to review, a human reviewer calls `approve_chunk` (or `reject_chunk`) via the assistant or local `/review` UI.
 6. Approved chunks become visible to the chat app's RAG context on the next chat request only when their document and collection are also `EXTERNAL` and `CHAT`-visible — read-only, no action required on the chat app's side.
 
 **Harness rules** (same shape, one extra review stage since these define behavioral boundaries, not just content):

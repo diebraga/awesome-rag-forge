@@ -15,7 +15,7 @@ export type ReviewTriage = {
   summary: string;
   reasons: string[];
   recommendedAction: string;
-  trustedUseBlocked: true;
+  trustedUseBlocked: boolean;
 };
 
 function clampConfidence(value: number) {
@@ -104,7 +104,7 @@ export function buildReviewTriage(input: {
     priority: "LOW",
     summary: "This looks like a clean new source with no nearby duplicate, update, contradiction, or extraction warning.",
     reasons: ["No review warnings were raised.", ...input.placementReview.reasons],
-    recommendedAction: "Include this item in a batch approval after a quick spot check.",
-    trustedUseBlocked: true,
+    recommendedAction: "Use immediately. It can still be audited later if feedback or future edits reveal a problem.",
+    trustedUseBlocked: false,
   };
 }

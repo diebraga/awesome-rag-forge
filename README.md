@@ -40,18 +40,18 @@ If a user drops this repository into an AI coding assistant and asks to set it u
 
 ## Overview
 
-awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. A user connects an MCP-capable assistant, asks it to create or improve the knowledge base, reviews the proposed changes, and only approved knowledge becomes visible to the chat/testing surface.
+awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. A user connects an MCP-capable assistant, asks it to create or improve the knowledge base, and clean knowledge is added directly to the live brain while ambiguous/problematic items are routed to review.
 
-The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. The system should capture added knowledge, organize it, and prioritize review without silently trusting ambiguous content. It is meant for builders who want local-first RAG management, human approval, portable API/client documentation, and a clear separation between “using the knowledge base” and “changing the knowledge base.”
+The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. The system should capture added knowledge, organize it, make clean additions usable immediately, and prioritize review only when content is ambiguous, risky, or potentially conflicting. It is meant for builders who want local-first RAG management, human approval, portable API/client documentation, and a clear separation between “using the knowledge base” and “changing the knowledge base.”
 
 Current status: early local-first project. The MCP server can manage RAG knowledge, harness rules, feedback review, PDF ingestion, and eval creation workflows. The Next.js UI is a testing surface, not a production admin dashboard.
 
 ## Key Features
 
 - **MCP-managed knowledge base**: create, review, approve, archive, and inspect RAG knowledge through MCP tools.
-- **Review triage**: new knowledge is saved as `PENDING_REVIEW` with advisory buckets such as `READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, and `DUPLICATE_OR_UPDATE_CANDIDATE`; none of those buckets bypass human approval.
+- **Review triage**: clean knowledge is saved directly as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with clear reasons such as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`.
 - **Read-only testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready.
-- **Human approval boundary**: knowledge and harness changes go through proposal/review flows before affecting the chat.
+- **Human approval boundary where it matters**: MCP writes still require explicit user approval, but human review is reserved for ambiguous/problematic knowledge and harness changes.
 - **Audience and visibility controls**: collections and documents carry an audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); the chat and read-only UI only see approved external knowledge marked `CHAT`.
 - **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
 - **PDF ingestion**: MCP upload tools extract selectable text, fall back to OCR, clean text for LLM use, and optionally store original files in S3-compatible storage.

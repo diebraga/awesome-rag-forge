@@ -66,7 +66,7 @@ async function main() {
       chunkIndex: 1,
       sectionTitle: "How knowledge is added",
       chunkText:
-        "The MCP server never writes to the database silently. The assistant first calls a proposal tool that explains the recommended collection, document, chunking plan, and source metadata. Only after you approve does it save anything, and new knowledge defaults to PENDING_REVIEW.",
+        "The MCP server never writes to the database silently. The assistant first calls a proposal tool that explains the recommended collection, document, chunking plan, and source metadata. Only after you approve does it save anything, and clean knowledge can be saved directly as APPROVED, while ambiguous/problematic knowledge is routed to PENDING_REVIEW with a review reason.",
     },
     {
       id: "rag_chunk_sample_3",
@@ -212,7 +212,7 @@ async function main() {
     update: {
       question: "How do I add new knowledge to the knowledge base?",
       expectedAnswer:
-        "Ask the assistant to propose adding a source, review the proposal, then approve it so it is saved as PENDING_REVIEW.",
+        "Ask the assistant to propose adding a source, review the proposal, then approve it. Clean knowledge is saved directly as APPROVED; ambiguous/problematic knowledge is routed to PENDING_REVIEW with a review reason.",
       category: "documentation",
       domain: "product",
       tags: ["seed", "rag"],
@@ -222,7 +222,7 @@ async function main() {
       collectionId: collection.id,
       question: "How do I add new knowledge to the knowledge base?",
       expectedAnswer:
-        "Ask the assistant to propose adding a source, review the proposal, then approve it so it is saved as PENDING_REVIEW.",
+        "Ask the assistant to propose adding a source, review the proposal, then approve it. Clean knowledge is saved directly as APPROVED; ambiguous/problematic knowledge is routed to PENDING_REVIEW with a review reason.",
       category: "documentation",
       domain: "product",
       tags: ["seed", "rag"],

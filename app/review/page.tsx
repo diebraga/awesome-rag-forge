@@ -27,6 +27,13 @@ type ReviewTriage = {
   reasons?: string[];
 };
 
+type ReviewReason = {
+  title?: string;
+  summary?: string;
+  recommendedAction?: string;
+  reasons?: string[];
+};
+
 type SearchParams = Promise<{ chunkPage?: string; harnessPage?: string }>;
 
 function parsePage(value: string | undefined) {
@@ -43,6 +50,21 @@ function triageFrom(metadata: unknown): ReviewTriage {
   return triage && typeof triage === "object" && !Array.isArray(triage)
     ? (triage as ReviewTriage)
     : { disposition: "NEEDS_REVIEW", priority: "MEDIUM", summary: "No triage metadata was stored for this item." };
+}
+
+function reviewReasonFrom(metadata: unknown, triage: ReviewTriage): ReviewReason {
+  const reason = metadataRecord(metadata).reviewReason;
+  if (reason && typeof reason === "object" && !Array.isArray(reason)) return reason as ReviewReason;
+  return {
+    title: triage.disposition === "CONFLICTS_WITH_APPROVED"
+      ? "Possible conflict"
+      : triage.disposition === "DUPLICATE_OR_UPDATE_CANDIDATE"
+        ? "Possible duplicate or update"
+        : "Needs human review",
+    summary: triage.summary,
+    recommendedAction: triage.recommendedAction,
+    reasons: triage.reasons,
+  };
 }
 
 function priorityClass(priority?: string) {
@@ -159,7 +181,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Searc
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-black">Pending chunks</h2>
-              <p className="text-xs text-black/50">Approve or reject each chunk directly here. High-risk triage should be reviewed first.</p>
+              <p className="text-xs text-black/50">Approve or reject each chunk directly here. Items only appear here when the MCP routed them to review; each card explains why.</p>
             </div>
             <Pagination chunkPage={chunkPage} harnessPage={harnessPage} current={chunkPage} total={chunkPages} target="chunk" />
           </div>
@@ -170,6 +192,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Searc
             <div className="space-y-3">
               {data.chunks.map((chunk) => {
                 const triage = triageFrom(chunk.metadata ?? chunk.document.metadata);
+                const reviewReason = reviewReasonFrom(chunk.metadata ?? chunk.document.metadata, triage);
                 return (
                   <article key={chunk.id} className="rounded-xl border border-black/10 bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -182,7 +205,16 @@ export default async function ReviewPage({ searchParams }: { searchParams: Searc
                           {chunk.document.collection && <span className="text-xs text-black/45">{chunk.document.collection.name}</span>}
                         </div>
                         <h3 className="text-sm font-semibold text-black">{chunk.document.title}</h3>
-                        {triage.summary && <p className="text-xs leading-5 text-black/55">{triage.summary}</p>}
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                          <p className="font-semibold">Why this is in review: {reviewReason.title ?? "Needs human review"}</p>
+                          {(reviewReason.summary ?? triage.summary) && <p className="mt-1">{reviewReason.summary ?? triage.summary}</p>}
+                          {reviewReason.reasons && reviewReason.reasons.length > 0 && (
+                            <ul className="mt-2 list-disc space-y-1 pl-4">
+                              {reviewReason.reasons.slice(0, 3).map((reason) => <li key={reason}>{reason}</li>)}
+                            </ul>
+                          )}
+                          {(reviewReason.recommendedAction ?? triage.recommendedAction) && <p className="mt-2 font-medium">{reviewReason.recommendedAction ?? triage.recommendedAction}</p>}
+                        </div>
                         <p className="max-h-36 overflow-auto whitespace-pre-wrap text-sm leading-6 text-black/75">{chunk.chunkText}</p>
                       </div>
                       <div className="grid w-full gap-2 sm:w-72">

@@ -192,7 +192,7 @@ BAD feedback
 -> get_feedback_case
 -> propose_source_insert
 -> user approval
--> approve_source_insert writes PENDING_REVIEW
+-> approve_source_insert writes APPROVED when clean, or PENDING_REVIEW with reviewReason when ambiguous/problematic
 -> approve_chunk makes it live
 -> mark_feedback_resolved
 ```

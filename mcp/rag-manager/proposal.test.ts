@@ -17,10 +17,10 @@ describe("buildSourceProposal", () => {
     expect(proposal.placementReview.recommendation).toBe("CREATE_NEW_DOCUMENT");
     expect(proposal.placementReview.summary).toMatch(/new document/i);
     expect(proposal.reviewTriage.disposition).toBe("READY_FOR_BATCH_APPROVAL");
-    expect(proposal.reviewTriage.trustedUseBlocked).toBe(true);
+    expect(proposal.reviewTriage.trustedUseBlocked).toBe(false);
   });
 
-  it("routes unclassified source proposals to review instead of batch approval", async () => {
+  it("routes unclassified source proposals to review instead of direct use", async () => {
     const proposal = await buildSourceProposal({
       title: "Unclassified note",
       sourceText: "This note has enough information to save, but no domain or category.",

@@ -4,7 +4,7 @@
 
 The chat uses hybrid retrieval over `APPROVED` chunks belonging to `APPROVED`, `EXTERNAL`, `CHAT`-visible documents inside `EXTERNAL`, `CHAT`-visible collections. The latest user question is passed into `lib/rag/retrieval.ts`, which runs semantic pgvector search when chunk embeddings are available, merges those candidates with lexical candidates, then ranks the union before building the prompt.
 
-MCP proposals first run a placement review against nearby existing documents, then add review triage, then enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This is still behind the existing propose -> approve review path: placement recommendations and aliases are proposal data, saved content receives fingerprints for future duplicate detection, and embeddings are written only when a human approves a chunk through MCP or the guarded local `/review` page.
+MCP proposals first run a placement review against nearby existing documents, then add review triage, then enrich each chunk with human-reviewable `metadata.retrievalAliases` such as canonical names, aliases/synonyms, category words, and likely user questions. Those aliases are folded into lexical scoring and into the text embedded at approval time. This still runs through the existing propose -> user-approval write path: placement recommendations and aliases are proposal data, saved content receives fingerprints for future duplicate detection, and clean content is usable immediately while ambiguous/problematic content waits for review.
 
 Retrieval normalizes punctuation and spacing before scoring, so compact user phrasing such as `COEse` can match spaced stored knowledge such as `COES eindex`. Semantic search handles broader phrasing such as `tell me about the company` when the relevant chunk has an embedding. If no semantic or lexical candidates match, retrieval returns no context; the chat then follows the no-context branch and must not invent citations.
 
@@ -34,20 +34,20 @@ The chat, `/api/rag/context`, `/api/rag/collections*`, and document download rou
 
 ## Human review loop
 
-New knowledge is never immediately usable by the chat app:
+New knowledge follows a direct-or-review path:
 
 1. `propose_source_insert` (or `propose_file_upload` for a PDF) — read-only, returns a proposal (recommended collection, document metadata, chunk plan, warnings).
-2. `approve_source_insert` (or `approve_file_upload`) — writes the document/chunks as `PENDING_REVIEW`, but only if `userApproval: true`. The saved metadata includes `reviewTriage`, which may mark the item as `READY_FOR_BATCH_APPROVAL`, `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`. That triage only prioritizes review; it never makes the content trusted by itself.
-3. `approve_chunk` / `reject_chunk` — or the guarded local `/review` page's equivalent server actions — lets a human reviewer move chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already — that's what makes the document (and its downloadable file, if it has one) actually visible; a document sitting at `PENDING_REVIEW` is never retrieved or downloadable regardless of individual chunk statuses.
+2. `approve_source_insert` (or `approve_file_upload`) — writes only if `userApproval: true`. Clean items (`READY_FOR_BATCH_APPROVAL` / `trustedUseBlocked: false`) are saved as `APPROVED` and become usable immediately. Ambiguous/problematic items are saved as `PENDING_REVIEW` with `reviewReason` metadata explaining why.
+3. `approve_chunk` / `reject_chunk` — or the guarded local `/review` page's equivalent server actions — is only needed for items routed to review. It moves chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already.
 4. **Or**, instead of step 3 for an already-reviewed chunk that just needs correcting: `propose_chunk_update` → `approve_chunk_update` (see [MCP Server](mcp-server.md#correcting-knowledge-propose_chunk_update--approve_chunk_update)). Editing an `APPROVED` chunk sends it back to `PENDING_REVIEW` — the loop re-enters at step 3, it doesn't skip it. Removal follows the same "never skip review" shape via `archive_document` (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)).
 
-Only step 3's `APPROVED` chunks are surfaced to end users, and only if the parent document and collection are also `APPROVED`/`EXTERNAL`/`CHAT`-visible. Internal or restricted knowledge can exist in the same database for operator/MCP workflows without entering chat retrieval.
+Only `APPROVED` chunks are surfaced to end users, and only if the parent document and collection are also `APPROVED`/`EXTERNAL`/`CHAT`-visible. Internal or restricted knowledge can exist in the same database for operator/MCP workflows without entering chat retrieval.
 
 ### Review triage
 
-Review triage exists to reduce friction without poisoning the trusted RAG. A clean item can be grouped as `READY_FOR_BATCH_APPROVAL`, while risky items are prioritized as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`. All of these states still keep `trustedUseBlocked: true` until a human approves the chunk.
+Review triage exists to reduce friction without poisoning the trusted RAG. A clean item is marked `READY_FOR_BATCH_APPROVAL` with `trustedUseBlocked: false` and is added directly to the brain. Risky items are prioritized as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`; those keep `trustedUseBlocked: true`, are saved as `PENDING_REVIEW`, and carry `reviewReason` metadata.
 
-The MCP `list_pending_reviews` tool and the local `/review` dashboard both surface these buckets so reviewers do not need to reason over the entire pending queue at once. Review high-risk buckets first, then batch-approve clean-looking items after a spot check.
+The MCP `list_pending_reviews` tool and the local `/review` dashboard surface only items that actually need review. Each pending item explains why it is there, so reviewers do not need to infer the reason from raw metadata.
 
 ## Feedback and evaluation
 

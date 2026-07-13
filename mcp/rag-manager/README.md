@@ -34,7 +34,7 @@ Use this flow:
 3. Ask: "Do you want me to save this to the knowledge base?"
 4. Only after approval, call `approve_source_insert` with `userApproval: true`.
 
-New documents and chunks are saved as `PENDING_REVIEW` by default.
+Clean documents and chunks are saved as `APPROVED` by default after explicit user approval; ambiguous/problematic items are saved as `PENDING_REVIEW` with `reviewReason` metadata.
 
 ## Tools
 

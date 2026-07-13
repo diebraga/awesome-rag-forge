@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildReviewTriage } from "./review-triage";
 
 describe("buildReviewTriage", () => {
-  it("marks clean new knowledge as ready for batch approval but still blocks trusted use", () => {
+  it("marks clean new knowledge as immediately trusted", () => {
     const triage = buildReviewTriage({
       sourceText: "Coase builds an index for franchise disclosure documents.",
       warnings: [],
@@ -17,8 +17,8 @@ describe("buildReviewTriage", () => {
 
     expect(triage.disposition).toBe("READY_FOR_BATCH_APPROVAL");
     expect(triage.priority).toBe("LOW");
-    expect(triage.trustedUseBlocked).toBe(true);
-    expect(triage.recommendedAction).toMatch(/batch approval/i);
+    expect(triage.trustedUseBlocked).toBe(false);
+    expect(triage.recommendedAction).toMatch(/use immediately/i);
   });
 
   it("prioritizes possible contradictions with approved knowledge", () => {

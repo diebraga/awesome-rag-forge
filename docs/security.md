@@ -2,7 +2,7 @@
 
 ## Human approval before writes
 
-The MCP server never writes new knowledge without an explicit approval step (`propose_source_insert` → human review → `approve_source_insert` with `userApproval: true`). New knowledge always starts as `PENDING_REVIEW`; nothing reaches `APPROVED` without a separate `approve_chunk` call. Do not add a code path that skips this.
+The MCP server never writes new knowledge without an explicit approval step (`propose_source_insert` → user approves the write → `approve_source_insert` with `userApproval: true`). After that approval, clean knowledge may be written directly as `APPROVED`; ambiguous/problematic knowledge must be written as `PENDING_REVIEW` with `reviewReason` metadata. Do not add a write path that skips proposal or explicit user approval.
 
 ## No automatic approval
 
@@ -92,7 +92,7 @@ Do not add a way to write to `HarnessRule` that skips this validation, and do no
 
 ## Every MCP write requires explicit approval — no exceptions
 
-Every tool in `mcp/rag-manager/server.ts` that writes to the database takes a `userApproval: boolean` (or is itself the human review step, like `approve_chunk`/`approve_harness_rule`) and refuses with a clear message if it isn't `true`. Review triage may label a pending item as `READY_FOR_BATCH_APPROVAL`, but that label is advisory only: it must never write `APPROVED` automatically or bypass `approve_chunk` / `approve_harness_rule`. This includes `create_collection` and `attach_document_file`, which were originally direct writes with no gate — both now require `userApproval: true` like every other write tool. If you add a new MCP tool that writes anything, give it the same gate; a write tool with no confirmation step is a bug, not a design choice.
+Every tool in `mcp/rag-manager/server.ts` that writes to the database takes a `userApproval: boolean` (or is itself the human review step, like `approve_chunk`/`approve_harness_rule`) and refuses with a clear message if it isn't `true`. Review triage controls knowledge persistence: clean knowledge (`trustedUseBlocked: false`) may be written directly as `APPROVED` after explicit user approval, while ambiguous/problematic knowledge (`trustedUseBlocked: true`) must be written as `PENDING_REVIEW` with `reviewReason` metadata. Harness rules still require their separate review path and must never auto-approve. This includes `create_collection` and `attach_document_file`, which were originally direct writes with no gate — both now require `userApproval: true` like every other write tool. If you add a new MCP tool that writes anything, give it the same gate; a write tool with no confirmation step is a bug, not a design choice.
 
 `archive_document` — the tool that removes knowledge from use, including optionally deleting a stored file — follows the same rule: `userApproval: true` required, no exceptions, same as inserting new knowledge. It also never hard-deletes a `RagDocument`/`RagChunk` row; it only ever changes `status` to `ARCHIVED`, which is what keeps `RagReview`/`RagFeedback` audit history intact instead of cascading it away. If you're tempted to add a real `DELETE` path later, don't — archiving already achieves "gone from every read surface" without losing the audit trail, and a hard delete would.
 

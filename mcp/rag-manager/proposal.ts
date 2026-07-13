@@ -98,7 +98,7 @@ export const proposalSchema = z.object({
     summary: z.string(),
     reasons: z.array(z.string()),
     recommendedAction: z.string(),
-    trustedUseBlocked: z.literal(true),
+    trustedUseBlocked: z.boolean(),
   }),
   reviewStatus: z.literal("PENDING_REVIEW"),
   warnings: z.array(z.string()),
