@@ -243,34 +243,107 @@ Blank bucket fields are simply skipped (not written as empty strings) — a
 user can fill in one of the three now and the rest later without clobbering
 anything already set.
 
-### 3. Gate UI
+### 3. Gate UI — one card, just the inputs
 
-New `app/connection-gate.tsx` (server component, renders the form + optional
-bucket section + secondary terminal link + the existing masked "last used"
-hint from the prior spec):
+Deliberately minimal per explicit direction: no explanatory prose blocks, no
+"supported databases" lists, no terminal fallback link, no separate masked-
+URL paragraph — a single centered card with the `DATABASE_URL` field and the
+three (optional) bucket fields, nothing else. The `SetupActions`/"Open setup
+terminal" component and the old two screens (`app/database-setup-required.tsx`,
+`app/database-connection-failed.tsx`) are all deleted, not reused or demoted
+to secondary. `npm run setup` remains fully available as a plain CLI path —
+this only removes its in-UI pointer, not the script itself.
 
-- `DATABASE_URL` field: `<input type="password" name="databaseUrl">`, client
-  component wrapping `connectDatabaseAction`, shows inline error on failure
-  (the action's own `error` string, e.g. "Enter a DATABASE_URL." or a
-  post-connect-attempt `getDatabaseConnectionStatus()` failure message —
-  never the raw driver error per the existing `DATABASE_CONNECTION_ERROR`
-  constant already in `lib/database-health.ts`).
-- Bucket fields: a `<details>`/collapsed section, three optional text inputs
-  (`STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`) in
-  their own `<form>` wired to `saveBucketCredentialsAction` with its own
-  "Save bucket settings" button — a separate submission from "Connect",
-  never required for "Connect" to succeed. Lives only on this gate screen,
-  same as today; "configured later" means the user can leave it blank here
-  and add it to `.env` afterward through the existing `npm run setup`
-  terminal flow — this spec does not add a persistent post-connect settings
-  page for it (see Non-goals).
-- Secondary link/button: "Prefer the terminal? Run `npm run setup`" — reuses
-  the existing `SetupActions` component from the prior spec, demoted from
-  primary to secondary framing.
-- On successful connect: call `router.refresh()` (a client component wrapping
-  the form triggers this after the action resolves `{ ok: true }`) — this
-  re-runs the layout's server-side connection check on the same route the
-  user was already on, no full page reload needed, no restart.
+`app/connection-gate.tsx` (server component, only receives `maskedUrl` — no
+other props):
+
+```tsx
+export function ConnectionGate({ maskedUrl }: { maskedUrl?: string }) {
+  return (
+    <main className="flex h-full items-center justify-center bg-white px-6">
+      <div className="w-full max-w-sm space-y-5 rounded-lg border border-black/10 bg-black/[0.02] p-6">
+        <h1 className="text-lg font-semibold text-black">Connect a database</h1>
+        <ConnectionForm maskedUrl={maskedUrl} />
+      </div>
+    </main>
+  );
+}
+```
+
+`app/connection-form.tsx` (`"use client"`, the only interactive piece):
+
+```tsx
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { connectDatabaseAction, saveBucketCredentialsAction } from "./connect-database-action";
+
+export function ConnectionForm({ maskedUrl }: { maskedUrl?: string }) {
+  const router = useRouter();
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [bucketSaved, setBucketSaved] = useState(false);
+
+  async function handleConnect(formData: FormData) {
+    setConnecting(true);
+    setConnectError(null);
+    const result = await connectDatabaseAction(formData);
+    if (!result.ok) {
+      setConnecting(false);
+      setConnectError(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleSaveBucket(formData: FormData) {
+    const result = await saveBucketCredentialsAction(formData);
+    setBucketSaved(result.ok);
+  }
+
+  return (
+    <div className="space-y-5">
+      <form action={handleConnect} className="space-y-2">
+        <label htmlFor="databaseUrl" className="block text-sm font-medium text-black">
+          Database URL
+        </label>
+        <Input
+          id="databaseUrl"
+          name="databaseUrl"
+          type="password"
+          placeholder={maskedUrl ?? "postgresql://user:password@host:5432/database"}
+          required
+        />
+        {connectError && <p className="text-sm text-red-600">{connectError}</p>}
+        <Button type="submit" disabled={connecting} className="w-full">
+          {connecting ? "Connecting…" : "Connect"}
+        </Button>
+      </form>
+
+      <form action={handleSaveBucket} className="space-y-2 border-t border-black/10 pt-4">
+        <p className="text-sm font-medium text-black">Bucket (optional)</p>
+        <Input name="storageBucket" placeholder="Bucket name" />
+        <Input name="storageAccessKeyId" type="password" placeholder="Access key ID" />
+        <Input name="storageSecretAccessKey" type="password" placeholder="Secret access key" />
+        <Button type="submit" variant="outline" className="w-full">
+          {bucketSaved ? "Saved" : "Save bucket"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+```
+
+The `maskedUrl` hint (from the existing `getDatabaseConnectionStatus()`
+result) becomes the `DATABASE_URL` field's placeholder instead of a separate
+paragraph — visible without adding another block to the card. On successful
+connect, `router.refresh()` re-runs the layout's server-side connection
+check on the same route the user was already on — no full page reload, no
+restart. Bucket fields submit independently of the database field/button and
+never block "Connect."
 
 ### 4. Layout-level gating
 
@@ -359,14 +432,18 @@ disconnect toggle placed there in the prior spec. What that means precisely:
 **The "Disconnect" testing control moves to `components/header.tsx`:** a
 small button (reusing the existing `/api/dev/toggle-disconnect` route
 unchanged — that route was never `/review`-specific, just called from
-there) rendered only when `database.ok` is true (i.e., only ever visible
-once actually connected, since the gate itself replaces the whole page
-otherwise). Clicking it calls the route then `router.refresh()`, which the
-layout's connection check picks up on the next render — same mechanism as
-before, different location. `Header` needs to become a small client
-component wrapper for this one interactive piece (it already receives
-`testingSurfaceEnabled` as a prop from the server-rendered layout, so this
-follows the same existing shape, not a new pattern).
+there), added to the nav that's already inside `Header`. Confirming the
+part worth stating plainly: `<Header>` itself is never rendered at all while
+disconnected — per Design §4, `app/layout.tsx` renders *either* `<Header>` +
+`{children}` (when `database.ok`) *or* `<ConnectionGate>` (when not), never
+both, never partially. So there is no state where the Disconnect button, nav
+links, branding, or any other header item is visible without an active
+connection — nothing in the header exists to show. Clicking Disconnect calls
+the route then `router.refresh()`, which the layout's connection check picks
+up on the next render, swapping straight to the gate. `Header` needs to
+become a small client component wrapper for this one interactive piece (it
+already receives `testingSurfaceEnabled` as a prop from the server-rendered
+layout, so this follows the same existing shape, not a new pattern).
 
 **Docs that describe `/review` as a real, available feature** — not the
 general MCP review/approval concept, which stays valid — get the `/review`-
