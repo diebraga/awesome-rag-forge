@@ -52,11 +52,12 @@ Current status: early local-first project. The MCP server can manage RAG knowled
 - **Review triage**: clean knowledge is saved directly as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with clear reasons such as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`.
 - **Local testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready; Collections can archive approved visible knowledge after an explicit warning/confirmation.
 - **Human approval boundary where it matters**: MCP writes still require explicit user approval, but human review is reserved for ambiguous/problematic knowledge and harness changes.
-- **Audience, visibility, and scoped knowledge controls**: collections/documents carry audience (`EXTERNAL`, `INTERNAL`, `RESTRICTED`) and use-context visibility (`CHAT`, `OPERATOR`, `REVIEW`, `EVAL`); future per-person/per-company memory should attach to generic knowledge scopes, not a project-owned user/auth layer.
+- **Audience, visibility, and scoped knowledge controls**: collections/documents/chunks can attach to generic `KnowledgeScope` rows (`GLOBAL`, `USER`, `ORGANIZATION`, `PROJECT`, etc.) while keeping auth/user ownership in the host app.
 - **Feedback loop**: the UI can capture thumbs up/down; review, resolution, and eval creation remain MCP-only.
 - **PDF ingestion**: MCP upload tools extract selectable text, fall back to OCR, clean text for LLM use, and optionally store original files in S3-compatible storage.
 - **Generated OpenAPI docs**: Swagger/OpenAPI is generated from route annotations and gated behind the same local testing readiness checks.
 - **Local Postgres path**: optional Docker Compose setup for Postgres + `pgvector` when the user does not already have a database URL.
+- **Portable brain export/import**: move the approved RAG brain between Postgres databases with dry-run imports, no secrets in snapshots, and no host-app user-table relationships.
 
 ## Architecture at a Glance
 
@@ -113,7 +114,7 @@ Scoped knowledge is the planned way to add personalization while keeping the pro
 | `mcp/rag-manager/` | MCP tools for knowledge, harness, feedback, file upload, and eval workflows. |
 | `prisma/` | Prisma schema and seed data. |
 | `docs/` | Official project documentation. |
-| `scripts/` | Build/setup helpers, including OpenAPI generation and local Postgres init. |
+| `scripts/` | Build/setup helpers, including OpenAPI generation, local Postgres init, and portable brain export/import. |
 
 ## Prerequisites
 
@@ -149,6 +150,29 @@ Open `http://localhost:3000`. If `DATABASE_URL` is missing, the app first shows 
 
 Opening the browser is enough to test the approved RAG, browse collections, and locally archive already-approved visible documents/chunks from the Collections page after an explicit warning. It is still not an MCP client: creating, organizing, approving, correcting, uploading, or managing harness rules requires an MCP-capable client connected to the MCP server — see [docs/mcp-server.md](docs/mcp-server.md).
 
+## Portable brain
+
+The brain can be moved between Postgres-compatible databases with `pgvector` using the local `/portable-brain` wizard or CLI scripts. Export approved knowledge with:
+
+```bash
+npm run brain:export -- --output brain.json
+```
+
+Dry-run an import before writing:
+
+```bash
+npm run brain:import -- --file brain.json
+```
+
+Apply only after checking the dry run, then rebuild embeddings:
+
+```bash
+npm run brain:import -- --file brain.json --apply --mode skip
+npm run rag:embeddings:backfill
+```
+
+This is not Supabase-specific; Supabase is just one Postgres provider. It is also not database-engine-agnostic: the project requires Postgres + `pgvector`. When integrating with another app, keep host app users/tenants as external metadata/scope refs instead of adding foreign-key relationships from RAG tables to host app tables. See [Portable Brain](docs/portable-brain.md), [Export / Import](docs/export-import.md), and [Integrating With An Existing App](docs/integrating-with-existing-app.md).
+
 ## LLM provider
 
 The chat's reply-generating backend is swappable, not hardcoded — `app/api/chat/route.ts` only ever talks to a `ChatProvider` interface (`lib/chat-providers/types.ts`), never to a specific model API directly. Ollama is the offline default; Claude, Codex/OpenAI, and Gemini are available for hosted testing when their API keys are present in `.env`.
@@ -183,6 +207,9 @@ Full documentation lives in [`docs/`](docs/), organized by topic:
 - [Local Postgres Setup](docs/local-postgres.md)
 - [RAG Architecture](docs/rag.md)
 - [Scoped Knowledge](docs/scoped-knowledge.md)
+- [Portable Brain](docs/portable-brain.md)
+- [Export / Import](docs/export-import.md)
+- [Integrating With An Existing App](docs/integrating-with-existing-app.md)
 - [Feedback Review Loop](docs/feedback-review-loop.md)
 - [Post-Install Handoff](docs/post-install-handoff.md)
 - [MCP Server](docs/mcp-server.md)

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { RagSourceType } from "../../generated/prisma/enums";
 import { chunkSourceText, chunkPdfPages, type ExtractedPageInput } from "./chunking";
 import { buildRetrievalAliases } from "../../lib/rag/retrieval-enrichment";
-import { inferKnowledgeVisibility, KNOWLEDGE_AUDIENCES, KNOWLEDGE_VISIBILITY_SCOPES } from "../../lib/rag/visibility";
+import { inferKnowledgeVisibility, KNOWLEDGE_AUDIENCES, KNOWLEDGE_SCOPE_KINDS, KNOWLEDGE_VISIBILITY_SCOPES, GLOBAL_KNOWLEDGE_SCOPE_ID } from "../../lib/rag/visibility";
 import { buildPlacementReview, type PlacementCandidateInput } from "./placement-intelligence";
 import { buildReviewTriage } from "./review-triage";
 import { prisma } from "./prisma";
@@ -29,6 +29,7 @@ export const statusSchema = z.enum([
 
 export const audienceSchema = z.enum(KNOWLEDGE_AUDIENCES);
 export const visibilitySchema = z.enum(KNOWLEDGE_VISIBILITY_SCOPES);
+export const knowledgeScopeKindSchema = z.enum(KNOWLEDGE_SCOPE_KINDS);
 
 export const feedbackRatingSchema = z.enum([
   "GOOD",
@@ -48,6 +49,7 @@ export const proposalSchema = z.object({
     tags: z.array(z.string()).default([]),
     audience: audienceSchema,
     visibility: z.array(visibilitySchema).default([]),
+    scopeId: z.string().optional(),
   }),
   shouldCreateCollection: z.boolean(),
   proposedDocument: z.object({
@@ -59,6 +61,7 @@ export const proposalSchema = z.object({
     tags: z.array(z.string()).default([]),
     audience: audienceSchema,
     visibility: z.array(visibilitySchema).default([]),
+    scopeId: z.string().optional(),
   }),
   chunkPlan: z.array(
     z.object({
@@ -136,6 +139,7 @@ async function findPlacementCandidates(input: {
   category?: string;
   domain?: string;
   tags?: string[];
+  scopeId?: string;
 }): Promise<PlacementCandidateInput[]> {
   const candidateFilters = [
     input.collectionId ? { collectionId: input.collectionId } : undefined,
@@ -148,6 +152,7 @@ async function findPlacementCandidates(input: {
     const documents = await prisma.ragDocument.findMany({
       where: {
         status: { in: ["PENDING_REVIEW", "APPROVED"] },
+        scopeId: input.scopeId,
         ...(candidateFilters.length > 0 ? { OR: candidateFilters } : {}),
       },
       select: {
@@ -195,6 +200,7 @@ export async function buildSourceProposal(input: {
   audience?: z.infer<typeof audienceSchema>;
   visibility?: Array<z.infer<typeof visibilitySchema>>;
   collectionId?: string;
+  scopeId?: string;
 }) {
   const collection = input.collectionId
     ? await prisma.ragCollection.findUnique({
@@ -209,6 +215,7 @@ export async function buildSourceProposal(input: {
     audience: input.audience,
     visibility: input.visibility,
   });
+  const effectiveScopeId = input.scopeId ?? collection?.scopeId ?? GLOBAL_KNOWLEDGE_SCOPE_ID;
   const effectiveAudience = input.audience ?? collection?.audience ?? visibilityPlan.audience;
   const effectiveVisibility = input.visibility?.length
     ? input.visibility
@@ -228,6 +235,7 @@ export async function buildSourceProposal(input: {
     category: input.category,
     domain: input.domain,
     tags: input.tags,
+    scopeId: effectiveScopeId,
   });
   const placementReview = buildPlacementReview({
     title,
@@ -253,6 +261,7 @@ export async function buildSourceProposal(input: {
         tags: collection.tags,
         audience: collection.audience,
         visibility: collection.visibility,
+        scopeId: collection.scopeId ?? undefined,
       }
     : {
         name: defaultCollectionName(input.category, input.domain),
@@ -262,6 +271,7 @@ export async function buildSourceProposal(input: {
         tags: input.tags ?? [],
         audience: effectiveAudience,
         visibility: effectiveVisibility,
+        scopeId: effectiveScopeId,
       };
 
   const chunks = rawChunks.map((chunk) => ({
@@ -288,6 +298,7 @@ export async function buildSourceProposal(input: {
       tags: input.tags ?? [],
       audience: effectiveAudience,
       visibility: effectiveVisibility,
+      scopeId: effectiveScopeId,
     },
     chunkPlan: chunks,
     sourcePlan: {
@@ -318,6 +329,7 @@ export async function buildFileProposal(input: {
   audience?: z.infer<typeof audienceSchema>;
   visibility?: Array<z.infer<typeof visibilitySchema>>;
   collectionId?: string;
+  scopeId?: string;
 }) {
   const collection = input.collectionId
     ? await prisma.ragCollection.findUnique({
@@ -333,6 +345,7 @@ export async function buildFileProposal(input: {
     audience: input.audience,
     visibility: input.visibility,
   });
+  const effectiveScopeId = input.scopeId ?? collection?.scopeId ?? GLOBAL_KNOWLEDGE_SCOPE_ID;
   const effectiveAudience = input.audience ?? collection?.audience ?? visibilityPlan.audience;
   const effectiveVisibility = input.visibility?.length
     ? input.visibility
@@ -356,6 +369,7 @@ export async function buildFileProposal(input: {
     category: input.category,
     domain: input.domain,
     tags: input.tags,
+    scopeId: effectiveScopeId,
   });
   const placementReview = buildPlacementReview({
     title,
@@ -381,6 +395,7 @@ export async function buildFileProposal(input: {
         tags: collection.tags,
         audience: collection.audience,
         visibility: collection.visibility,
+        scopeId: collection.scopeId ?? undefined,
       }
     : {
         name: defaultCollectionName(input.category, input.domain),
@@ -390,6 +405,7 @@ export async function buildFileProposal(input: {
         tags: input.tags ?? [],
         audience: effectiveAudience,
         visibility: effectiveVisibility,
+        scopeId: effectiveScopeId,
       };
 
   const chunks = rawChunks.map((chunk) => ({
@@ -415,6 +431,7 @@ export async function buildFileProposal(input: {
       tags: input.tags ?? [],
       audience: effectiveAudience,
       visibility: effectiveVisibility,
+      scopeId: effectiveScopeId,
     },
     chunkPlan: chunks,
     sourcePlan: {

@@ -9,6 +9,7 @@ import {
   proposalSchema,
   type SourceProposal,
   audienceSchema,
+  knowledgeScopeKindSchema,
   visibilitySchema,
   sourceTypeSchema,
   statusSchema,
@@ -95,6 +96,7 @@ async function analyzePdfUpload(input: {
   audience?: z.infer<typeof audienceSchema>;
   visibility?: Array<z.infer<typeof visibilitySchema>>;
   collectionId?: string;
+  scopeId?: string;
 }): Promise<FileUploadProposalResult> {
   if (input.fileBase64.length > MAX_UPLOAD_BASE64_CHARS) {
     throw new Error(
@@ -120,6 +122,7 @@ async function analyzePdfUpload(input: {
     audience: input.audience,
     visibility: input.visibility,
     collectionId: input.collectionId,
+    scopeId: input.scopeId,
   });
 
   return {
@@ -177,6 +180,7 @@ async function persistFileUpload(input: {
             tags: proposal.proposedCollection.tags,
             audience: proposal.proposedCollection.audience,
             visibility: proposal.proposedCollection.visibility,
+            scopeId: proposal.proposedCollection.scopeId,
           },
         })
       : await tx.ragCollection.findUniqueOrThrow({
@@ -220,6 +224,7 @@ async function persistFileUpload(input: {
           sectionTitle: chunk.sectionTitle,
           tokenCount: chunk.tokenCount,
           pageNumber: chunk.pageNumber,
+          scopeId: proposal.proposedDocument.scopeId,
           status: persistencePolicy.chunkStatus,
           metadata: withContentFingerprint(
             withRetrievalAliases({ insertedBy: "rag-manager-mcp", reviewTriage: effectiveReviewTriage, reviewReason: persistencePolicy.reviewReason }, chunk.retrievalAliases),
@@ -440,6 +445,54 @@ server.registerTool(
 );
 
 server.registerTool(
+  "list_knowledge_scopes",
+  {
+    title: "List knowledge scopes",
+    description: "List generic knowledge scopes such as GLOBAL, USER, ORGANIZATION, PROJECT, or CUSTOM. These are not auth users; externalRef points to whatever id the host app owns.",
+    inputSchema: {
+      kind: knowledgeScopeKindSchema.optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+    },
+  },
+  async ({ kind, limit }) => {
+    const scopes = await prisma.knowledgeScope.findMany({
+      where: { kind },
+      orderBy: [{ kind: "asc" }, { label: "asc" }],
+      take: limit,
+    });
+    return jsonResult(scopes);
+  },
+);
+
+server.registerTool(
+  "create_knowledge_scope",
+  {
+    title: "Create knowledge scope",
+    description: "Create a generic scope for knowledge ownership/context. This does not create users, auth, teams, or organizations; it only records an external reference for filtering knowledge.",
+    inputSchema: {
+      kind: knowledgeScopeKindSchema,
+      label: z.string().min(1),
+      externalRef: z.string().optional(),
+      description: z.string().optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
+      userApproval: z.boolean(),
+    },
+  },
+  async ({ userApproval, ...input }) => {
+    if (!userApproval) {
+      return textResult("Refused to write. userApproval must be true before creating a knowledge scope.");
+    }
+    const scope = await prisma.knowledgeScope.create({
+      data: {
+        ...input,
+        metadata: input.metadata as Prisma.InputJsonValue | undefined,
+      },
+    });
+    return jsonResult(scope);
+  },
+);
+
+server.registerTool(
   "create_collection",
   {
     title: "Create RAG collection",
@@ -453,6 +506,7 @@ server.registerTool(
       tags: z.array(z.string()).default([]),
       audience: audienceSchema.default("EXTERNAL"),
       visibility: z.array(visibilitySchema).default(["CHAT", "OPERATOR", "REVIEW"]),
+      scopeId: z.string().optional(),
       userApproval: z.boolean(),
     },
   },
@@ -475,20 +529,22 @@ server.registerTool(
       category: z.string().optional(),
       domain: z.string().optional(),
       status: statusSchema.optional(),
+      scopeId: z.string().optional(),
       limit: z.number().int().min(1).max(100).default(25),
     },
   },
-  async ({ collectionId, category, domain, status, limit }) => {
+  async ({ collectionId, category, domain, status, scopeId, limit }) => {
     const documents = await prisma.ragDocument.findMany({
       where: {
         collectionId,
         category,
         domain,
         status,
+        scopeId,
       },
       include: {
         collection: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, scopeId: true },
         },
         _count: {
           select: { chunks: true, sources: true, reviews: true },
@@ -513,10 +569,11 @@ server.registerTool(
       category: z.string().optional(),
       domain: z.string().optional(),
       status: statusSchema.optional(),
+      scopeId: z.string().optional(),
       limit: z.number().int().min(1).max(50).default(10),
     },
   },
-  async ({ query, collectionId, category, domain, status, limit }) => {
+  async ({ query, collectionId, category, domain, status, scopeId, limit }) => {
     const chunks = await prisma.ragChunk.findMany({
       where: {
         status,
@@ -525,6 +582,7 @@ server.registerTool(
           collectionId,
           category,
           domain,
+          scopeId,
         },
       },
       include: {
@@ -570,6 +628,7 @@ server.registerTool(
       audience: audienceSchema.optional(),
       visibility: z.array(visibilitySchema).optional(),
       collectionId: z.string().optional(),
+      scopeId: z.string().optional(),
     },
   },
   async (input) => {
@@ -617,6 +676,7 @@ server.registerTool(
               tags: proposal.proposedCollection.tags,
               audience: proposal.proposedCollection.audience,
               visibility: proposal.proposedCollection.visibility,
+              scopeId: proposal.proposedCollection.scopeId,
             },
           })
         : await tx.ragCollection.findUniqueOrThrow({
@@ -634,6 +694,7 @@ server.registerTool(
           tags: proposal.proposedDocument.tags,
           audience: proposal.proposedDocument.audience,
           visibility: proposal.proposedDocument.visibility,
+          scopeId: proposal.proposedDocument.scopeId,
           status: persistencePolicy.documentStatus,
           metadata: withContentFingerprint(
             {
@@ -711,11 +772,12 @@ server.registerTool(
       audience: audienceSchema.optional(),
       visibility: z.array(visibilitySchema).optional(),
       collectionId: z.string().optional(),
+      scopeId: z.string().optional(),
     },
   },
-  async ({ fileName, fileBase64, title, category, domain, tags, audience, visibility, collectionId }) => {
+  async ({ fileName, fileBase64, title, category, domain, tags, audience, visibility, collectionId, scopeId }) => {
     try {
-      const analyzed = await analyzePdfUpload({ fileName, fileBase64, title, category, domain, tags, audience, visibility, collectionId });
+      const analyzed = await analyzePdfUpload({ fileName, fileBase64, title, category, domain, tags, audience, visibility, collectionId, scopeId });
 
       return jsonResult({
         ...analyzed,
@@ -751,6 +813,7 @@ server.registerTool(
           audience: audienceSchema.optional(),
           visibility: z.array(visibilitySchema).optional(),
           collectionId: z.string().optional(),
+          scopeId: z.string().optional(),
         }),
       ).min(1),
     },

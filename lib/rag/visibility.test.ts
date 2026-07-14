@@ -42,13 +42,28 @@ describe("knowledge visibility", () => {
   it("builds the approved external chat retrieval where clause", () => {
     expect(buildApprovedChatChunkWhere()).toEqual({
       status: "APPROVED",
+      OR: [{ scopeId: null }, { scopeId: { in: ["knowledge_scope_global"] } }],
       document: {
         status: "APPROVED",
         audience: "EXTERNAL",
         visibility: { has: "CHAT" },
+        OR: [{ scopeId: null }, { scopeId: { in: ["knowledge_scope_global"] } }],
         collection: {
           audience: "EXTERNAL",
           visibility: { has: "CHAT" },
+          OR: [{ scopeId: null }, { scopeId: { in: ["knowledge_scope_global"] } }],
+        },
+      },
+    });
+  });
+
+  it("adds active non-global scopes without removing global knowledge", () => {
+    expect(buildApprovedChatChunkWhere(["scope_maria"])).toMatchObject({
+      OR: [{ scopeId: null }, { scopeId: { in: ["knowledge_scope_global", "scope_maria"] } }],
+      document: {
+        OR: [{ scopeId: null }, { scopeId: { in: ["knowledge_scope_global", "scope_maria"] } }],
+        collection: {
+          OR: [{ scopeId: null }, { scopeId: { in: ["knowledge_scope_global", "scope_maria"] } }],
         },
       },
     });

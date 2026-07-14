@@ -345,3 +345,11 @@ Ask: What scope should this knowledge belong to, and what audience/visibility sh
 ```
 
 If the user provides a concrete user id, treat it as `externalRef`. If the user provides a name only, create or choose a labeled scope after confirming ambiguity. If the user does not provide any scope, default to the existing global collection behavior and ask only when the prompt implies personalization or restricted/internal ownership.
+
+## Current implementation
+
+Scoped knowledge is implemented with `KnowledgeScope` plus nullable `scopeId` fields on `RagCollection`, `RagDocument`, `RagChunk`, and `RagEvalCase`. Built-in scope kinds are `GLOBAL`, `USER`, `TEAM`, `ORGANIZATION`, `PROJECT`, `AGENT`, `SESSION`, and `CUSTOM`.
+
+`KnowledgeScope` is not an auth model. Do not add passwords, sessions, memberships, billing, or host-app users here. Store the host app's id in `externalRef` and let the host app decide which scopes are active for a request.
+
+Default chat retrieval includes the stable `knowledge_scope_global` scope and legacy `NULL` scope rows. Future integrations can pass additional active scope ids, for example global + Maria + Project X, while still preserving audience and visibility checks.

@@ -25,7 +25,9 @@
     "setup:provider": "tsx scripts/setup-provider.ts",
     "check:env": "tsx scripts/check-env.ts",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "brain:export": "tsx scripts/brain-export.ts",
+    "brain:import": "tsx scripts/brain-import.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1084.0",

@@ -13,6 +13,8 @@ app/
                              not an MCP client, not exposed publicly
   review/actions.ts           Server actions for approve/reject; each independently calls
                              assertLocalReviewMode() before writing
+  portable-brain/page.tsx     Local-only wizard shell for Postgres brain export/import
+  portable-brain/actions.ts  Server actions for validated dry-run/apply imports
   api/chat/route.ts        Chat endpoint: calls Ollama with the full assistant context
   api/rag/route.ts         Debug endpoint: returns the current approved RAG context
   api/rag/context/route.ts  Full awareness bundle for external agents (identity, harness, stats, context)
@@ -55,6 +57,7 @@ lib/
     index.ts                   getChatProvider() — reads CHAT_PROVIDER, defaults to "ollama"
   prisma.ts               Prisma client for the Next.js app (server-only)
   storage.ts               Gates document-attachment features behind storage env vars
+  portable-brain.ts         Snapshot export/import helpers for moving the brain between Postgres databases
   ollama.ts                 Ollama connection config + local-only auto-start logic
   utils.ts                   shadcn class-name helper
 
@@ -95,6 +98,7 @@ GEMINI.md                 Entry point for Gemini CLI sessions
 .clinerules               Entry point for Cline sessions
 AGENTS.md                 Project-specific coding notes shared by every assistant above
 README.md                 Human-facing quick start
+docs/prompts/             Copyable agent prompts for install/export/import/host-app integration
 .env.example              Documented environment variables (no secrets)
 ```
 

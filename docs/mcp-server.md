@@ -201,3 +201,7 @@ Either way, the server only connects to whichever client launched it *at that cl
 - "Fix the typo in this chunk." / "Update this fact — the warranty is now 3 years, not 5."
 - "Archive this document, it's outdated."
 - "Create an eval case for [question]."
+
+## Portable brain note
+
+The MCP server remains the write path for creating and organizing knowledge. Bulk movement between databases uses the local CLI scripts documented in [Portable Brain](portable-brain.md) and [Export / Import](export-import.md): export from the source Postgres database, dry-run import into the target Postgres database, apply after confirmation, then rebuild embeddings. Do not add foreign-key relationships from RAG tables to host app user/account tables during an integration; use metadata/scope refs instead.

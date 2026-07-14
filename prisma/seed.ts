@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
 import { PROJECT_DOCUMENTATION_NAME } from "../lib/project";
+import { GLOBAL_KNOWLEDGE_SCOPE_ID } from "../lib/rag/visibility";
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL!,
@@ -10,6 +11,23 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+  const globalScope = await prisma.knowledgeScope.upsert({
+    where: { id: GLOBAL_KNOWLEDGE_SCOPE_ID },
+    update: {
+      kind: "GLOBAL",
+      label: "Global knowledge",
+      description: "Default scope for knowledge available to normal global retrieval.",
+    },
+    create: {
+      id: GLOBAL_KNOWLEDGE_SCOPE_ID,
+      kind: "GLOBAL",
+      label: "Global knowledge",
+      description: "Default scope for knowledge available to normal global retrieval.",
+    },
+  });
+
+  void globalScope;
+
   const collection = await prisma.ragCollection.upsert({
     where: { id: "rag_collection_sample" },
     update: {

@@ -21,6 +21,9 @@ Load only what's relevant to your current task:
 - [Local Postgres Setup](docs/local-postgres.md) — Docker-first local Postgres + pgvector setup.
 - [RAG Architecture](docs/rag.md) — chunking, retrieval, review triage, feedback/eval.
 - [Scoped Knowledge](docs/scoped-knowledge.md) — generic per-profile/per-user/per-company memory without owning auth/users.
+- [Portable Brain](docs/portable-brain.md) — Postgres-to-Postgres brain portability without host-app user-table relations.
+- [Export / Import](docs/export-import.md) — CLI snapshot workflow, dry runs, and embedding rebuilds.
+- [Existing App Integration](docs/integrating-with-existing-app.md) — how to attach the brain beside another app without owning auth.
 - [Feedback Review Loop](docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
 - [Post-Install Handoff](docs/post-install-handoff.md) — final setup message explaining UI vs. MCP capabilities.
 - [MCP Server](docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
@@ -56,6 +59,7 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 - Never describe the browser UI as MCP-connected or as an MCP client. Running `npm run dev` and opening the browser lets users test approved knowledge; `/review` can locally approve/reject pending chunks and harness rules, but creation/organization/archive/correction still requires a separate MCP-capable client configured to launch `npm run mcp:rag-manager` with `cwd` pointing at this clone.
 - Never let an MCP write path skip `propose_source_insert` → explicit user approval. After approval, clean knowledge may be written directly as `APPROVED` without another confirmation when the user already asked to add it. Ambiguous/problematic knowledge must explain why and ask the user to choose `APPROVE_ANYWAY`, `SEND_TO_REVIEW`, revise/merge/update, or cancel. `CONFLICTS_WITH_APPROVED`, `DUPLICATE_OR_UPDATE_CANDIDATE`, warnings, storage fallbacks, and restricted/internal uncertainty are review triggers.
 - Never let a harness rule (`HarnessRule`) grant a capability the code doesn't already enforce. Hardcoded identity/read-only rules always render before and win over harness config — see [docs/rag.md](docs/rag.md#the-harness-capabilities-and-restrictions). Keep `lib/rag/harness.ts`'s hardcoded blocklist; don't replace it with prompt-only guidance.
+- When moving this brain between databases, use the portable brain CLI docs/prompts. The target must be Postgres with `pgvector`; run dry-run imports before `--apply`, rebuild embeddings afterward, and never create direct Prisma relations from RAG tables to host app user/account tables.
 - For personalization, do not add a project-owned `User` auth layer unless the user explicitly asks to build auth. Use generic knowledge scopes or plain nullable external reference fields (`kind`, `label`, `externalRef`) so local profiles or external apps can map their own users/workspaces into RAG retrieval. Custom app tables may exist beside the RAG schema, but do not add required Prisma relations from RAG tables to those custom tables unless you also update and test the MCP write paths.
 - Never add or restore domain-specific fields (e.g. legal/medical-only vocabulary) to the shared schema — use `category`/`domain`/`tags`/`metadata`.
 - Never deploy, push, or provision hosted infrastructure unless explicitly asked in the moment.
@@ -65,3 +69,5 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 ## Connecting this server to Gemini CLI
 
 See [docs/mcp-server.md](docs/mcp-server.md) for the MCP client config shape. As with Claude Desktop, `cwd` must point at your local clone of this repo — Gemini CLI does not get a hosted MCP server for free by deploying the app.
+
+- KnowledgeScope is context, not auth: use it to label GLOBAL/USER/ORGANIZATION/PROJECT/etc. knowledge with optional external refs, but never add passwords, sessions, memberships, or host-app user relations to the RAG schema.

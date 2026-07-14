@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: "/harness", label: "Harness" },
   { href: "/review", label: "Review" },
   { href: "/schema", label: "Schema" },
+  { href: "/portable-brain", label: "Portable" },
   { href: "/api-docs", label: "API Docs" },
 ];
 

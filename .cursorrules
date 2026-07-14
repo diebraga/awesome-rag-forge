@@ -53,6 +53,7 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 - Never describe the browser UI as MCP-connected or as an MCP client. Running `npm run dev` and opening the browser lets users test approved knowledge only; RAG/harness management requires a separate MCP-capable client configured to launch `npm run mcp:rag-manager` with `cwd` pointing at this clone.
 - Never let an MCP write path skip `propose_source_insert` → human approval → `PENDING_REVIEW`. Nothing reaches `APPROVED` without an explicit `approve_chunk` call.
 - Never let a harness rule (`HarnessRule`) grant a capability the code doesn't already enforce. Hardcoded identity/read-only rules always render before and win over harness config — see [docs/rag.md](docs/rag.md#the-harness-capabilities-and-restrictions). Keep `lib/rag/harness.ts`'s hardcoded blocklist; don't replace it with prompt-only guidance.
+- When moving this brain between databases, use the portable brain CLI docs/prompts. The target must be Postgres with `pgvector`; run dry-run imports before `--apply`, rebuild embeddings afterward, and never create direct Prisma relations from RAG tables to host app user/account tables.
 - For personalization, do not add a project-owned `User` auth layer unless the user explicitly asks to build auth. Use generic knowledge scopes or plain nullable external reference fields (`kind`, `label`, `externalRef`) so local profiles or external apps can map their own users/workspaces into RAG retrieval. Custom app tables may exist beside the RAG schema, but do not add required Prisma relations from RAG tables to those custom tables unless you also update and test the MCP write paths.
 - Never add or restore domain-specific fields (e.g. legal/medical-only vocabulary) to the shared schema — use `category`/`domain`/`tags`/`metadata`.
 - Never deploy, push, or provision hosted infrastructure unless explicitly asked in the moment.
@@ -61,3 +62,5 @@ If you're setting this project up, debugging a failed `npm run dev`/`npm run bui
 ## Connecting this server to Cursor
 
 See [docs/mcp-server.md](docs/mcp-server.md) for the MCP client config shape. As with Claude Desktop, `cwd` must point at your local clone of this repo — Cursor does not get a hosted MCP server for free by deploying the app.
+
+- KnowledgeScope is context, not auth: use it to label GLOBAL/USER/ORGANIZATION/PROJECT/etc. knowledge with optional external refs, but never add passwords, sessions, memberships, or host-app user relations to the RAG schema.
