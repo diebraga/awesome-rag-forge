@@ -12,7 +12,11 @@ export default async function Home() {
   const database = await getDatabaseConnectionStatus();
 
   if (!database.ok) {
-    return database.reason === "missing" ? <DatabaseSetupRequired /> : <DatabaseConnectionFailed />;
+    return database.reason === "missing" ? (
+      <DatabaseSetupRequired />
+    ) : (
+      <DatabaseConnectionFailed maskedUrl={database.maskedUrl} />
+    );
   }
 
   if (!isTestingSurfaceEnabled()) {

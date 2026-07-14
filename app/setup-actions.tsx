@@ -4,7 +4,7 @@ import { useState } from "react";
 import { RefreshCw, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function SetupActions() {
+export function SetupActions({ maskedUrl }: { maskedUrl?: string }) {
   const [status, setStatus] = useState<"idle" | "opening" | "opened" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -34,6 +34,12 @@ export function SetupActions() {
         each value with masked input and writes straight to <code>.env</code> — nothing is typed
         here, nothing is sent to this page.
       </p>
+      {maskedUrl && (
+        <p className="text-sm leading-6 text-black/60">
+          Last used database: <code>{maskedUrl}</code>. Credentials are never shown — only the
+          host, port, and database name.
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={handleOpenTerminal} disabled={status === "opening"} size="sm">
           <Terminal className="size-4" />

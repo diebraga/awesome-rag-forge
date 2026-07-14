@@ -1,6 +1,6 @@
 import { SetupActions } from "./setup-actions";
 
-export function DatabaseConnectionFailed() {
+export function DatabaseConnectionFailed({ maskedUrl }: { maskedUrl?: string }) {
   return (
     <main className="h-full overflow-y-auto bg-white px-6 py-10 text-black">
       <section className="mx-auto w-full max-w-2xl space-y-6 pb-10">
@@ -34,7 +34,7 @@ export function DatabaseConnectionFailed() {
           MongoDB, SQLite, MySQL, and document databases require code changes.
         </p>
 
-        <SetupActions />
+        <SetupActions maskedUrl={maskedUrl} />
       </section>
     </main>
   );

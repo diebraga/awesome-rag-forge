@@ -618,6 +618,26 @@
         }
       }
     },
+    "/api/dev/toggle-disconnect": {
+      "post": {
+        "summary": "Toggle simulated database disconnect for local UI testing",
+        "description": "Local-only, non-production. In-memory only, resets on server restart.",
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Toggled"
+          },
+          "400": {
+            "description": "Not available in this environment"
+          },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "summary": "Generate a chat reply grounded in approved knowledge",

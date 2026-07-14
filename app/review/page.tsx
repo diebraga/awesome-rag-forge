@@ -7,6 +7,7 @@ import { getLocalReviewModeFailure } from "@/lib/local-review-guard";
 import { prisma } from "@/lib/prisma";
 import { DatabaseConnectionFailed } from "../database-connection-failed";
 import { DatabaseSetupRequired } from "../database-setup-required";
+import { DevDisconnectToggle } from "./dev-disconnect-toggle";
 import {
   approveChunkAction,
   approveHarnessRuleAction,
@@ -145,7 +146,11 @@ export default async function ReviewPage({ searchParams }: { searchParams: Searc
   const database = await getDatabaseConnectionStatus();
 
   if (!database.ok) {
-    return database.reason === "missing" ? <DatabaseSetupRequired /> : <DatabaseConnectionFailed />;
+    return database.reason === "missing" ? (
+      <DatabaseSetupRequired />
+    ) : (
+      <DatabaseConnectionFailed maskedUrl={database.maskedUrl} />
+    );
   }
 
   const localReviewFailure = getLocalReviewModeFailure();
@@ -163,8 +168,13 @@ export default async function ReviewPage({ searchParams }: { searchParams: Searc
     <main className="flex h-full flex-col overflow-auto bg-white px-4 py-6 text-black">
       <section className="mx-auto flex w-full max-w-5xl flex-col gap-5">
         <header className="space-y-2">
-          <p className="text-xs font-medium tracking-wide text-blue-600">Local review surface</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-black">Review pending knowledge</h1>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-2">
+              <p className="text-xs font-medium tracking-wide text-blue-600">Local review surface</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-black">Review pending knowledge</h1>
+            </div>
+            <DevDisconnectToggle />
+          </div>
           <p className="max-w-3xl text-sm leading-6 text-black/60">
             This page is local-only and reads pending review items directly from your configured Postgres database. Approvals and rejections are server actions guarded to refuse production runtimes.
           </p>
