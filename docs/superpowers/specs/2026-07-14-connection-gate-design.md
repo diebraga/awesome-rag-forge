@@ -169,7 +169,10 @@ up a live-mutated `process.env.DATABASE_URL` on the very next call, no restart.
 ### 2. Connect server action
 
 New `app/connect-database-action.ts` (server action, colocated with the gate
-UI that uses it — this project's existing convention, e.g. `app/review/actions.ts`):
+UI that uses it — this project's existing convention, e.g. `app/review/actions.ts`).
+One action for all five fields, matching the mockup's single "Continue"
+button — only `databaseUrl` is required, the other four are written
+if-and-only-if non-blank:
 
 ```ts
 "use server";
@@ -178,8 +181,19 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { upsertEnvVar } from "@/scripts/env-file";
 import { canSimulateDisconnect } from "@/lib/dev-disconnect"; // reused: same "never in production" gate shape
+import { saveConnectionValue, type SavedConnectionValues } from "@/lib/connection-keychain";
 
 export type ConnectResult = { ok: true } | { ok: false; error: string };
+
+const OPTIONAL_FIELDS: Array<{
+  formKey: keyof SavedConnectionValues;
+  envKey: string;
+}> = [
+  { formKey: "storageBucket", envKey: "STORAGE_BUCKET" },
+  { formKey: "storageAccessKeyId", envKey: "STORAGE_ACCESS_KEY_ID" },
+  { formKey: "storageSecretAccessKey", envKey: "STORAGE_SECRET_ACCESS_KEY" },
+  { formKey: "storageEndpoint", envKey: "STORAGE_ENDPOINT" },
+];
 
 export async function connectDatabaseAction(formData: FormData): Promise<ConnectResult> {
   if (!canSimulateDisconnect()) {
@@ -191,79 +205,70 @@ export async function connectDatabaseAction(formData: FormData): Promise<Connect
     return { ok: false, error: "Configuring the database from the UI is only available outside production." };
   }
 
-  const url = String(formData.get("databaseUrl") ?? "").trim();
-  if (!url) {
-    return { ok: false, error: "Enter a DATABASE_URL." };
+  const databaseUrl = String(formData.get("databaseUrl") ?? "").trim();
+  if (!databaseUrl) {
+    return { ok: false, error: "Enter a Database URL." };
   }
-
-  const envPath = join(process.cwd(), ".env");
-  const current = existsSync(envPath) ? readFileSync(envPath, "utf-8") : "";
-  writeFileSync(envPath, upsertEnvVar(current, "DATABASE_URL", url));
-  process.env.DATABASE_URL = url;
-
-  return { ok: true };
-}
-```
-
-Never echoes `url` back in the `ConnectResult` — success is just `{ ok: true }`;
-the caller re-fetches connection status (which will now succeed or fail
-against the real database) rather than trusting the write blindly.
-
-Bucket credentials are a **separate action**, not a branch inside this one —
-they're optional, non-blocking, and conceptually distinct (three fields, no
-connectivity check to run afterward), so a second single-purpose function is
-clearer than one function branching on which fields are present:
-
-```ts
-// app/connect-database-action.ts (continued)
-export async function saveBucketCredentialsAction(formData: FormData): Promise<ConnectResult> {
-  if (!canSimulateDisconnect()) {
-    return { ok: false, error: "Configuring storage from the UI is only available outside production." };
-  }
-
-  const fields: Array<[string, FormDataEntryValue | null]> = [
-    ["STORAGE_BUCKET", formData.get("storageBucket")],
-    ["STORAGE_ACCESS_KEY_ID", formData.get("storageAccessKeyId")],
-    ["STORAGE_SECRET_ACCESS_KEY", formData.get("storageSecretAccessKey")],
-  ];
 
   const envPath = join(process.cwd(), ".env");
   let current = existsSync(envPath) ? readFileSync(envPath, "utf-8") : "";
-  for (const [key, value] of fields) {
-    const trimmed = String(value ?? "").trim();
-    if (trimmed) current = upsertEnvVar(current, key, trimmed);
+  current = upsertEnvVar(current, "DATABASE_URL", databaseUrl);
+  saveConnectionValue("databaseUrl", databaseUrl);
+
+  for (const { formKey, envKey } of OPTIONAL_FIELDS) {
+    const value = String(formData.get(formKey) ?? "").trim();
+    if (!value) continue;
+    current = upsertEnvVar(current, envKey, value);
+    saveConnectionValue(formKey, value);
   }
+
   writeFileSync(envPath, current);
+  process.env.DATABASE_URL = databaseUrl;
 
   return { ok: true };
 }
 ```
 
-Blank bucket fields are simply skipped (not written as empty strings) — a
-user can fill in one of the three now and the rest later without clobbering
-anything already set.
+Never echoes any field back in the `ConnectResult` — success is just
+`{ ok: true }`; the caller re-fetches connection status (which will now
+succeed or fail against the real database) rather than trusting the write
+blindly. Blank optional fields are simply skipped (not written as empty
+strings, not cleared from the keychain if something was already saved
+there) — a user can fill in one field now and the rest later without
+clobbering anything already set.
 
-### 3. Gate UI — one card, just the inputs
+### 3. Gate UI — one card, matching the approved mockup
 
-Deliberately minimal per explicit direction: no explanatory prose blocks, no
-"supported databases" lists, no terminal fallback link, no separate masked-
-URL paragraph — a single centered card with the `DATABASE_URL` field and the
-three (optional) bucket fields, nothing else. The `SetupActions`/"Open setup
-terminal" component and the old two screens (`app/database-setup-required.tsx`,
-`app/database-connection-failed.tsx`) are all deleted, not reused or demoted
-to secondary. `npm run setup` remains fully available as a plain CLI path —
-this only removes its in-UI pointer, not the script itself.
+One form, one card, five fields, two buttons — matching the reference mockup
+exactly: a header bar ("Configure Connection Gate"), `Database URL` marked
+required, then `Storage Bucket Name` / `Access Key ID` / `Secret Access Key`
+/ `Storage Endpoint` all marked optional, footer-right "Clear" (resets the
+form fields on screen only — does not delete anything already saved) and
+"Continue" (submits everything in one action). No explanatory prose, no
+terminal fallback link, no separate masked-URL paragraph. The `SetupActions`/
+"Open setup terminal" component and the old two screens
+(`app/database-setup-required.tsx`, `app/database-connection-failed.tsx`)
+are all deleted, not reused or demoted to secondary. `npm run setup` remains
+fully available as a plain CLI path — this only removes its in-UI pointer,
+not the script itself. `STORAGE_ENDPOINT` is a real, already-documented env
+var (`docs/environment-variables.md`) for S3-compatible custom endpoints
+(Cloudflare R2, MinIO) — not a new concept, just a field this form was
+previously missing.
 
-`app/connection-gate.tsx` (server component, only receives `maskedUrl` — no
-other props):
+`app/connection-gate.tsx` (server component, only receives `savedValues` —
+see §3a for where that comes from):
 
 ```tsx
-export function ConnectionGate({ maskedUrl }: { maskedUrl?: string }) {
+export function ConnectionGate({ savedValues }: { savedValues: SavedConnectionValues }) {
   return (
-    <main className="flex h-full items-center justify-center bg-white px-6">
-      <div className="w-full max-w-sm space-y-5 rounded-lg border border-black/10 bg-black/[0.02] p-6">
-        <h1 className="text-lg font-semibold text-black">Connect a database</h1>
-        <ConnectionForm maskedUrl={maskedUrl} />
+    <main className="flex h-full items-center justify-center bg-slate-50 px-6">
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-black/10 bg-white">
+        <div className="border-b border-black/10 bg-gradient-to-b from-slate-100 to-slate-50 px-6 py-4">
+          <h1 className="text-lg font-semibold text-black">Configure Connection Gate</h1>
+        </div>
+        <div className="p-6">
+          <ConnectionForm savedValues={savedValues} />
+        </div>
       </div>
     </main>
   );
@@ -275,75 +280,173 @@ export function ConnectionGate({ maskedUrl }: { maskedUrl?: string }) {
 ```tsx
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { connectDatabaseAction, saveBucketCredentialsAction } from "./connect-database-action";
+import { connectDatabaseAction } from "./connect-database-action";
+import type { SavedConnectionValues } from "@/lib/connection-keychain";
 
-export function ConnectionForm({ maskedUrl }: { maskedUrl?: string }) {
+function Field({
+  id,
+  label,
+  required,
+  ...inputProps
+}: { id: string; label: string; required?: boolean } & React.ComponentProps<typeof Input>) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={id} className="block text-sm text-black">
+        {label} {required ? <span className="text-red-600">*</span> : null}{" "}
+        <span className="text-black/40">{required ? "(Required)" : "(Optional)"}</span>
+      </label>
+      <Input id={id} name={id} {...inputProps} />
+    </div>
+  );
+}
+
+export function ConnectionForm({ savedValues }: { savedValues: SavedConnectionValues }) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [connecting, setConnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-  const [bucketSaved, setBucketSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function handleConnect(formData: FormData) {
+  async function handleSubmit(formData: FormData) {
     setConnecting(true);
-    setConnectError(null);
+    setError(null);
     const result = await connectDatabaseAction(formData);
     if (!result.ok) {
       setConnecting(false);
-      setConnectError(result.error);
+      setError(result.error);
       return;
     }
     router.refresh();
   }
 
-  async function handleSaveBucket(formData: FormData) {
-    const result = await saveBucketCredentialsAction(formData);
-    setBucketSaved(result.ok);
-  }
-
   return (
-    <div className="space-y-5">
-      <form action={handleConnect} className="space-y-2">
-        <label htmlFor="databaseUrl" className="block text-sm font-medium text-black">
-          Database URL
-        </label>
-        <Input
-          id="databaseUrl"
-          name="databaseUrl"
-          type="password"
-          placeholder={maskedUrl ?? "postgresql://user:password@host:5432/database"}
-          required
-        />
-        {connectError && <p className="text-sm text-red-600">{connectError}</p>}
-        <Button type="submit" disabled={connecting} className="w-full">
-          {connecting ? "Connecting…" : "Connect"}
-        </Button>
-      </form>
+    <form ref={formRef} action={handleSubmit} className="space-y-4">
+      <Field
+        id="databaseUrl"
+        label="Database URL"
+        required
+        type="password"
+        placeholder="e.g., postgresql://user:password@localhost:5432/mydatabase"
+        defaultValue={savedValues.databaseUrl}
+      />
+      <Field
+        id="storageBucket"
+        label="Storage Bucket Name"
+        placeholder="e.g., global-knowledge-assets"
+        defaultValue={savedValues.storageBucket}
+      />
+      <Field
+        id="storageAccessKeyId"
+        label="Access Key ID"
+        placeholder="e.g., AKIA1234567890EXAMPLE"
+        defaultValue={savedValues.storageAccessKeyId}
+      />
+      <Field
+        id="storageSecretAccessKey"
+        label="Secret Access Key"
+        type="password"
+        placeholder="········"
+        defaultValue={savedValues.storageSecretAccessKey}
+      />
+      <Field
+        id="storageEndpoint"
+        label="Storage Endpoint"
+        placeholder="e.g., https://s3.us-east-1.amazonaws.com"
+        defaultValue={savedValues.storageEndpoint}
+      />
 
-      <form action={handleSaveBucket} className="space-y-2 border-t border-black/10 pt-4">
-        <p className="text-sm font-medium text-black">Bucket (optional)</p>
-        <Input name="storageBucket" placeholder="Bucket name" />
-        <Input name="storageAccessKeyId" type="password" placeholder="Access key ID" />
-        <Input name="storageSecretAccessKey" type="password" placeholder="Secret access key" />
-        <Button type="submit" variant="outline" className="w-full">
-          {bucketSaved ? "Saved" : "Save bucket"}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <div className="flex justify-end gap-2 border-t border-black/10 pt-4">
+        <Button type="button" variant="outline" onClick={() => formRef.current?.reset()}>
+          Clear
         </Button>
-      </form>
-    </div>
+        <Button type="submit" disabled={connecting}>
+          {connecting ? "Connecting…" : "Continue"}
+        </Button>
+      </div>
+    </form>
   );
 }
 ```
 
-The `maskedUrl` hint (from the existing `getDatabaseConnectionStatus()`
-result) becomes the `DATABASE_URL` field's placeholder instead of a separate
-paragraph — visible without adding another block to the card. On successful
-connect, `router.refresh()` re-runs the layout's server-side connection
-check on the same route the user was already on — no full page reload, no
-restart. Bucket fields submit independently of the database field/button and
-never block "Connect."
+On successful connect, `router.refresh()` re-runs the layout's server-side
+connection check on the same route the user was already on — no full page
+reload, no restart.
+
+### 3a. Local keychain storage
+
+New requirement: everything submitted through this form is saved to the
+OS keychain (macOS Keychain / Windows Credential Manager / Linux Secret
+Service), not just written in plaintext.
+
+**What does *not* change:** Prisma (`lib/prisma.ts`), the MCP server
+(`mcp/rag-manager/`, a separate Node process), and the seed script all keep
+reading `DATABASE_URL`/storage vars from `process.env`/`.env`, exactly as
+today. Making the keychain the *only* source of truth would mean teaching
+every one of those independent consumers to query it instead — a much
+larger change than this feature needs, and the MCP server in particular has
+no relationship to this web form at all.
+
+**What's new:** `.env` stays the operational source of truth; the same five
+values are *additionally* mirrored into the OS keychain, purely so this form
+can securely recall them the next time the gate is shown (`savedValues`,
+threaded from the layout down through `ConnectionGate`/`ConnectionForm`),
+instead of the user re-typing or hunting for them elsewhere. This works
+identically whether the app is running in a plain browser (`npm run dev`) or
+wrapped in Tauri — it's the Node server talking to the OS keychain directly,
+not a Tauri-specific `invoke()` bridge, so there's no dual implementation to
+maintain and no dependency on the Tauri wrapper being present.
+
+Library: [`@napi-rs/keyring`](https://www.npmjs.com/package/@napi-rs/keyring)
+(new dependency) — actively maintained, prebuilt native bindings for macOS/
+Windows/Linux, no native toolchain needed at install time (unlike the older,
+largely-abandoned `keytar`).
+
+```ts
+// lib/connection-keychain.ts
+import { Entry } from "@napi-rs/keyring";
+
+const SERVICE = "awesome-rag-forge";
+
+const KEYS = [
+  "databaseUrl",
+  "storageBucket",
+  "storageAccessKeyId",
+  "storageSecretAccessKey",
+  "storageEndpoint",
+] as const;
+
+export type SavedConnectionValues = Partial<Record<(typeof KEYS)[number], string>>;
+
+export function saveConnectionValue(key: (typeof KEYS)[number], value: string) {
+  new Entry(SERVICE, key).setPassword(value);
+}
+
+export function loadSavedConnectionValues(): SavedConnectionValues {
+  const values: SavedConnectionValues = {};
+  for (const key of KEYS) {
+    try {
+      values[key] = new Entry(SERVICE, key).getPassword();
+    } catch {
+      // No stored value for this key yet -- expected on first run, not an error.
+    }
+  }
+  return values;
+}
+```
+
+`connectDatabaseAction` (§2, revised below) calls `saveConnectionValue` for
+each non-blank submitted field, alongside its existing `.env` write.
+`app/layout.tsx` calls `loadSavedConnectionValues()` when disconnected and
+passes the result into `ConnectionGate` as `savedValues`, so the form
+pre-fills from the keychain rather than starting blank every time (a masked
+field still shows its saved value as the browser's own password-manager-
+style dots, not plaintext — `type="password"` already gives us that for
+free via `defaultValue`).
 
 ### 4. Layout-level gating
 
@@ -363,13 +466,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <div className="relative z-0 min-h-0 flex-1">{children}</div>
           </>
         ) : (
-          <ConnectionGate status={database} />
+          <ConnectionGate savedValues={loadSavedConnectionValues()} />
         )}
       </body>
     </html>
   );
 }
 ```
+
+`loadSavedConnectionValues()` (§3a) only ever runs on this disconnected
+branch — no keychain read happens on every request once connected, only
+when the gate is about to be shown.
 
 `{children}` is structurally not rendered at all when disconnected — this is
 what makes "can't navigate anywhere without a connection" actually true
@@ -472,6 +579,12 @@ pre-write every doc sentence.
   does); verified manually instead, same as every other local-only route in
   this project (`/api/setup/open-terminal`, `/api/dev/toggle-disconnect` had
   no route-level tests either — see prior spec).
+- `lib/connection-keychain.test.ts` (new): `saveConnectionValue` +
+  `loadSavedConnectionValues` round-trip against the real OS keychain (no
+  mock — `@napi-rs/keyring` is a thin native binding, mocking it would only
+  test the mock) using a distinct test-only service name so it never
+  collides with or pollutes real saved values, cleaning up (`Entry.deletePassword()`)
+  in the test's `afterEach`.
 - Manual verification: unset `DATABASE_URL` entirely, confirm every route
   (`/`, `/collections`, `/harness`, `/portable-brain`, `/api-docs`) shows
   only the gate, no `Header`/nav. Confirm `/review` itself now 404s (route

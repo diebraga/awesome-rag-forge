@@ -1,7 +1,7 @@
 [package]
-name = "app"
+name = "awesome-rag-forge"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Awesome RAG Forge"
 authors = ["you"]
 license = ""
 repository = ""
