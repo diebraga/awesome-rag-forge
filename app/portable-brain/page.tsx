@@ -1,23 +1,12 @@
-import { DatabaseConnectionFailed } from "@/app/database-connection-failed";
-import { DatabaseSetupRequired } from "@/app/database-setup-required";
 import { TestingApiAuthRequired } from "@/app/testing-api-auth-required";
 import { TestingSurfaceDisabled } from "@/app/testing-surface-disabled";
-import { getDatabaseConnectionStatus } from "@/lib/database-health";
 import { getPortableBrainStats } from "@/lib/portable-brain";
 import { prisma } from "@/lib/prisma";
 import { isPublicDeploymentRuntime, isTestingApiKeyConfigured } from "@/lib/testing-api-auth";
 import { isTestingSurfaceEnabled } from "@/lib/testing-surface";
 import { PortableBrainPageClient } from "./portable-brain-page-client";
 
-export const dynamic = "force-dynamic";
-
 export default async function PortableBrainPage() {
-  const database = await getDatabaseConnectionStatus();
-
-  if (!database.ok) {
-    return database.reason === "missing" ? <DatabaseSetupRequired /> : <DatabaseConnectionFailed />;
-  }
-
   if (!isTestingSurfaceEnabled()) {
     return <TestingSurfaceDisabled />;
   }
