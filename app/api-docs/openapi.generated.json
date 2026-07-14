@@ -21,6 +21,29 @@
     }
   },
   "paths": {
+    "/api/setup/open-terminal": {
+      "post": {
+        "summary": "Open a terminal running `npm run setup` on this machine",
+        "description": "Local-only, macOS-only, non-production. Never targets any machine other than the one this server process is already running on.",
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Terminal opened"
+          },
+          "400": {
+            "description": "Not available on this platform/environment"
+          },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
+          },
+          "500": {
+            "description": "Failed to open a terminal"
+          }
+        }
+      }
+    },
     "/api/rag": {
       "get": {
         "summary": "Debug/inspection endpoint for raw retrieval output",

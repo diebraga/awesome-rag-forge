@@ -1,3 +1,5 @@
+import { SetupActions } from "./setup-actions";
+
 function EnvVar({ children }: { children: React.ReactNode }) {
   return (
     <code className="rounded bg-black/5 px-1.5 py-0.5 text-[0.95em] text-black">
@@ -51,6 +53,8 @@ export function DatabaseSetupRequired() {
             as Cloudflare R2, AWS S3, and MinIO are supported.
           </p>
         </div>
+
+        <SetupActions />
 
         <div className="space-y-2 text-sm leading-6 text-black/60">
           <p>

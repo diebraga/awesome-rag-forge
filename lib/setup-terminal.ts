@@ -19,6 +19,34 @@ export function canOpenSetupTerminal({
 }
 
 /**
+ * Quotes a value for safe use inside a single POSIX shell argument: wraps it
+ * in single quotes, escaping any embedded single quote as '\''. AppleScript
+ * string literals need their own separate escaping — see
+ * appleScriptQuoteString() below — do not conflate the two. (JSON.stringify
+ * is NOT a substitute for either: it produces double-quoted JSON syntax,
+ * which breaks the outer AppleScript string literal instead of escaping
+ * into it.)
+ */
+function shellQuoteSingleArg(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Escapes a string for embedding inside an AppleScript double-quoted string literal. */
+function appleScriptQuoteString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * Builds the AppleScript passed to `osascript -e`. Exported (only) for unit
+ * testing the shell/AppleScript escaping in isolation, without spawning a
+ * real process.
+ */
+export function buildOpenTerminalScript(repoRoot: string): string {
+  const shellCommand = `cd ${shellQuoteSingleArg(repoRoot)} && npm run setup`;
+  return `tell application "Terminal" to do script "${appleScriptQuoteString(shellCommand)}"`;
+}
+
+/**
  * Opens Terminal.app, cd's into this repo's root, and runs `npm run setup`.
  * Only ever called after canOpenSetupTerminal() and the caller's local-
  * request guard both pass. Rejects with a plain Error if osascript itself
@@ -28,7 +56,7 @@ export function canOpenSetupTerminal({
  */
 export function openSetupTerminal(repoRoot: string = process.cwd()): Promise<void> {
   return new Promise((resolve, reject) => {
-    const script = `tell application "Terminal" to do script "cd ${JSON.stringify(repoRoot)} && npm run setup"`;
+    const script = buildOpenTerminalScript(repoRoot);
     const child = spawn("osascript", ["-e", script]);
     child.on("error", reject);
     child.on("exit", (code) => {

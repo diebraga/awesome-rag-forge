@@ -1,3 +1,5 @@
+import { SetupActions } from "./setup-actions";
+
 export function DatabaseConnectionFailed() {
   return (
     <main className="h-full overflow-y-auto bg-white px-6 py-10 text-black">
@@ -31,6 +33,8 @@ export function DatabaseConnectionFailed() {
           such as Prisma Postgres, Supabase, Neon, RDS/Postgres, or local Postgres.
           MongoDB, SQLite, MySQL, and document databases require code changes.
         </p>
+
+        <SetupActions />
       </section>
     </main>
   );
