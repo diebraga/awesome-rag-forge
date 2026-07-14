@@ -25,6 +25,7 @@ Load only what's relevant to your current task:
 - [Export / Import](docs/export-import.md) — CLI snapshot workflow, dry runs, and embedding rebuilds.
 - [Existing App Integration](docs/integrating-with-existing-app.md) — how to attach the brain beside another app without owning auth.
 - [Feedback Review Loop](docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
+- [Setup UX & Desktop Direction](docs/setup-ux-and-desktop-direction.md) — in-app "run setup" trigger, dev-only disconnect toggle, and the Tauri desktop-packaging direction.
 - [Post-Install Handoff](docs/post-install-handoff.md) — final setup message explaining UI vs. MCP capabilities.
 - [MCP Server](docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
 - [API Routes](docs/api-routes.md) — `/api/chat`, `/api/rag`.
