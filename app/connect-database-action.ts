@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { upsertEnvVar } from "@/scripts/env-file";
-import { canSimulateDisconnect } from "@/lib/dev-disconnect";
+import { canSimulateDisconnect, setDevDisconnectSimulated } from "@/lib/dev-disconnect";
 import { saveConnectionValue, type SavedConnectionValues } from "@/lib/connection-keychain";
 
 export type ConnectResult = { ok: true } | { ok: false; error: string };
@@ -39,6 +39,14 @@ export async function connectDatabaseAction(formData: FormData): Promise<Connect
 
   writeFileSync(envPath, current);
   process.env.DATABASE_URL = databaseUrl;
+
+  // Submitting this form is an explicit "connect me" action -- it must
+  // override any simulated-disconnect state left on from the header's
+  // Disconnect button (a toggle, not a one-way switch), or a real
+  // DATABASE_URL would never be able to un-stick the gate once a user had
+  // ever clicked Disconnect. Found via manual verification: the gate stayed
+  // up indefinitely after a valid reconnect attempt until this was added.
+  setDevDisconnectSimulated(false);
 
   return { ok: true };
 }
