@@ -23,9 +23,15 @@ Explicit new requirements from this conversation:
 2. That screen has a real `DATABASE_URL` input field. Bucket credentials are
    optional and do not block connecting; they can be configured after.
 3. Once connected, the app works normally, **without restarting the server**.
-4. If the app ever becomes disconnected again (real outage, or the existing
-   `/review` "Simulate disconnect" toggle), the user is sent back to the same
-   gate — automatically, on whatever route they're on.
+4. If the app ever becomes disconnected again (real outage, or a manual
+   "Disconnect" testing control), the user is sent back to the same gate —
+   automatically, on whatever route they're on.
+5. Remove the `/review` page entirely (not just relocate the disconnect
+   toggle off of it) — confirmed explicitly after flagging that `/review` is
+   pre-existing product functionality (a local-only dashboard for
+   approving/rejecting pending `RagChunk`/`HarnessRule` rows), not something
+   added this session. The "Disconnect" testing control needs a new home
+   that doesn't depend on a whole page existing — see Design §6.
 
 ## Security note (stated once, then followed either way per user's decision)
 
@@ -51,21 +57,27 @@ only, same discipline already established for the existing masked-URL hint.
    gate: if the database isn't reachable, render *only* the gate — no
    `Header`, no page content — regardless of which route was requested.
 2. Remove the now-redundant per-page connection checks in `app/page.tsx`,
-   `app/review/page.tsx`, `app/portable-brain/page.tsx`,
-   `app/harness/page.tsx`, `app/api-docs/page.tsx`, `app/collections/page.tsx`,
-   and `app/collections/[collectionId]/page.tsx` — the layout now guarantees
+   `app/portable-brain/page.tsx`, `app/harness/page.tsx`,
+   `app/api-docs/page.tsx`, `app/collections/page.tsx`, and
+   `app/collections/[collectionId]/page.tsx` — the layout now guarantees
    they only ever render when connected, so the check there was already
    redundant defense-in-depth, not the source of truth. Removing it collapses
-   7 duplicated call sites into 1.
+   6 duplicated call sites into 1 (a 7th, `app/review/page.tsx`, is deleted
+   outright — see §6).
 3. New connection form (`DATABASE_URL` input, optional collapsed bucket
    fields) replaces the old "Open setup terminal"-first framing on the gate
    screen. The terminal button remains, secondary.
 4. Submitting the form connects **without a server restart**: writes to
    `.env` (persisted) and updates the live process's connection immediately
    (in-memory), so the very next request already has it.
-5. Any future disconnect (real, or the `/review` simulate-disconnect toggle)
-   is caught by the same layout-level check and returns the user to the same
-   gate, from whatever route they were on.
+5. Any future disconnect (real outage, or the new Header-based "Disconnect"
+   testing control — see §6) is caught by the same layout-level check and
+   returns the user to the same gate, from whatever route they were on.
+6. Delete `/review` entirely (page, its own connection check, and the
+   dev-disconnect-toggle component that lived there) and move the
+   "Disconnect" testing control into the persistent `Header` component
+   instead, so it doesn't depend on a whole page existing. See §6 for what
+   does and doesn't move with it.
 
 ## Non-goals
 
@@ -83,6 +95,11 @@ only, same discipline already established for the existing masked-URL hint.
   work — they're independent mechanisms that happen to compose correctly
   (simulate-disconnect still short-circuits `getDatabaseConnectionStatus()`
   before the real check runs, same as before).
+- Not touching the MCP-server-side review/approval workflow (`RagReview`
+  table, `mcp/rag-manager/review-policy.ts`, the propose → approve → write
+  contract) or its documentation — only the `/review` *web page* is deleted;
+  the underlying concept it was a secondary UI for is untouched and stays
+  the primary, documented way knowledge gets approved.
 
 ## Design
 
@@ -287,11 +304,11 @@ what makes "can't navigate anywhere without a connection" actually true
 handing control to the layout, but its output is simply discarded/never
 reaches the response; no data it fetches is sent to the client either).
 
-### 5. Removing the 7 redundant per-page checks
+### 5. Removing the 6 redundant per-page checks
 
-Each of `app/page.tsx`, `app/review/page.tsx`, `app/portable-brain/page.tsx`,
-`app/harness/page.tsx`, `app/api-docs/page.tsx`, `app/collections/page.tsx`,
-and `app/collections/[collectionId]/page.tsx` currently starts with:
+Each of `app/page.tsx`, `app/portable-brain/page.tsx`, `app/harness/page.tsx`,
+`app/api-docs/page.tsx`, `app/collections/page.tsx`, and
+`app/collections/[collectionId]/page.tsx` currently starts with:
 
 ```ts
 const database = await getDatabaseConnectionStatus();
@@ -300,9 +317,9 @@ if (!database.ok) {
 }
 ```
 
-This block is deleted from all seven. The layout now guarantees none of them
+This block is deleted from all six. The layout now guarantees none of them
 render unless already connected, so this was duplicated defense-in-depth,
-not the actual source of truth — removing it collapses 7 call sites into the
+not the actual source of truth — removing it collapses 6 call sites into the
 1 in `app/layout.tsx`, which is the actual goal ("single source of truth"),
 not merely "also allowed to delete code."
 
@@ -312,6 +329,57 @@ deleted — the "missing" vs. "connection" distinction becomes framing inside
 the one gate component instead of two separate page components, since both
 cases now show the same form either way (a missing URL and an unreachable
 URL both need "enter a working DATABASE_URL").
+
+### 6. Deleting `/review`, and where its testing control moves
+
+`/review` is confirmed-intentional deletion: the whole route, not just the
+disconnect toggle placed there in the prior spec. What that means precisely:
+
+**Deleted:**
+- `app/review/page.tsx`, `app/review/dev-disconnect-toggle.tsx` — the page
+  and the toggle component that lived only for this page.
+- `app/review/actions.ts` — checked first: `approveChunkAction`,
+  `rejectChunkAction`, `approveHarnessRuleAction`, `rejectHarnessRuleAction`
+  are consumed *only* by `app/review/page.tsx` (verified by grepping every
+  `.ts`/`.tsx` file in the repo for those four names — no other file
+  imports them), so this can be deleted outright rather than relocated.
+- The `/review` nav entry in `components/header.tsx`.
+
+**Not deleted — genuinely shared, still needed elsewhere:**
+- `lib/local-review-guard.ts` (`assertLocalReviewMode`/
+  `getLocalReviewModeFailure`) is *also* imported by
+  `app/collections/actions.ts` for its unrelated soft-archive action. Stays
+  exactly as-is.
+- The underlying MCP-server-side review/approval *workflow* (`RagReview`
+  table, `mcp/rag-manager/review-policy.ts`, propose → approve → write via
+  MCP tools) is completely unrelated to the `/review` *web page* — it's the
+  primary way knowledge gets approved, the page was always a secondary local
+  convenience for the same underlying actions. Not touched by this spec.
+
+**The "Disconnect" testing control moves to `components/header.tsx`:** a
+small button (reusing the existing `/api/dev/toggle-disconnect` route
+unchanged — that route was never `/review`-specific, just called from
+there) rendered only when `database.ok` is true (i.e., only ever visible
+once actually connected, since the gate itself replaces the whole page
+otherwise). Clicking it calls the route then `router.refresh()`, which the
+layout's connection check picks up on the next render — same mechanism as
+before, different location. `Header` needs to become a small client
+component wrapper for this one interactive piece (it already receives
+`testingSurfaceEnabled` as a prop from the server-rendered layout, so this
+follows the same existing shape, not a new pattern).
+
+**Docs that describe `/review` as a real, available feature** — not the
+general MCP review/approval concept, which stays valid — get the `/review`-
+specific sentences removed or reworded: `docs/architecture.md`,
+`docs/database.md`, `docs/overview.md`, `docs/mcp-server.md`,
+`docs/testing-surface.md`, `docs/security.md`, `README.md`, and the
+`/review`-specific bullet already present in `CLAUDE.md`/`GEMINI.md`/
+`CODEX.md`/`.cursorrules`/`.windsurfrules`/`.clinerules` (the "Never add a
+write path... beyond two explicit exceptions" rule, which needs to drop the
+now-nonexistent `/review` exception and keep the `POST /api/feedback` one).
+Exact wording is decided at plan-writing time per file, not enumerated here
+— this spec's job is to establish that this cleanup is in scope, not to
+pre-write every doc sentence.
 
 ## Testing
 
@@ -328,11 +396,12 @@ URL both need "enter a working DATABASE_URL").
   this project (`/api/setup/open-terminal`, `/api/dev/toggle-disconnect` had
   no route-level tests either — see prior spec).
 - Manual verification: unset `DATABASE_URL` entirely, confirm every route
-  (`/`, `/review`, `/collections`, `/harness`, `/portable-brain`, `/api-docs`)
-  shows only the gate, no `Header`/nav. Submit a working `DATABASE_URL`
-  through the form, confirm the app becomes usable *without restarting the
-  dev server*. Use `/review`'s existing "Simulate disconnect" toggle,
-  confirm every route falls back to the gate again immediately.
+  (`/`, `/collections`, `/harness`, `/portable-brain`, `/api-docs`) shows
+  only the gate, no `Header`/nav. Confirm `/review` itself now 404s (route
+  deleted). Submit a working `DATABASE_URL` through the form, confirm the
+  app becomes usable *without restarting the dev server*. Use the new
+  Header "Disconnect" button, confirm every route falls back to the gate
+  again immediately.
 
 ## Open questions
 
