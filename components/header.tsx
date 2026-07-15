@@ -7,6 +7,7 @@ import { MenuIcon, WifiOff } from "lucide-react";
 import { PROJECT_NAME } from "@/lib/project";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuContent, MenuLinkItem, MenuTrigger } from "@/components/ui/menu";
+import { AddKnowledgeButton } from "@/components/add-knowledge-button";
 
 const NAV_LINKS = [
   { href: "/", label: "Chat" },
@@ -78,6 +79,8 @@ export function Header({ testingSurfaceEnabled }: { testingSurfaceEnabled: boole
             </Menu>
           </>
         )}
+
+        <AddKnowledgeButton />
 
         <Button onClick={handleDisconnect} disabled={disconnecting} variant="outline" size="sm">
           <WifiOff className="size-4" />
