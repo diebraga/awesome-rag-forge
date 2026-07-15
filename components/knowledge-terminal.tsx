@@ -3,7 +3,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Minus, PlusCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const PROVIDERS = [
@@ -57,9 +56,7 @@ export function KnowledgeTerminalPanel() {
   const [provider, setProvider] = useState<string>(
     () => (typeof window !== "undefined" && window.localStorage.getItem(LAST_PROVIDER_KEY)) || "claude",
   );
-  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
-  const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,27 +133,26 @@ export function KnowledgeTerminalPanel() {
     // ends via the Close button (cleanup only) -- NOT on collapse/expand.
   }, [sessionActive, provider]);
 
-  function attachFile(file: File) {
-    setAttachedFiles((prev) => [...prev, file]);
-  }
+  /**
+   * The panel no longer has its own chat composer -- the terminal itself is
+   * the chat (type directly into the live CLI session). Attach is the one
+   * thing typing into a real terminal can't do: pick local files. Selecting
+   * files stages them into .rag-inbox/ and immediately types a notice into
+   * the session, so there's no separate "send" step to remember.
+   */
+  async function handleAttach(files: FileList | null) {
+    const list = Array.from(files ?? []);
+    if (list.length === 0) return;
+    setAttaching(true);
 
-  function removeFile(index: number) {
-    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  async function handleSend() {
-    if (!message.trim() && attachedFiles.length === 0) return;
-    setSending(true);
-
-    let filePrefix = "";
-    if (attachedFiles.length > 0) {
-      const formData = new FormData();
-      for (const file of attachedFiles) formData.append("files", file);
-      const response = await fetch("/api/knowledge/stage-files", { method: "POST", body: formData });
-      const result = await response.json();
-      if (result.ok) {
-        filePrefix = `New files added: ${result.files.join(", ")} in .rag-inbox/. `;
-      }
+    const formData = new FormData();
+    for (const file of list) formData.append("files", file);
+    const response = await fetch("/api/knowledge/stage-files", { method: "POST", body: formData });
+    const result = await response.json();
+    if (!result.ok) {
+      setSessionError(result.error);
+      setAttaching(false);
+      return;
     }
 
     const { invoke } = await import("@tauri-apps/api/core");
@@ -165,15 +161,13 @@ export function KnowledgeTerminalPanel() {
       // into the terminal sends Enter as its own standalone keystroke, and
       // some interactive prompts only recognize a lone "\r" as submit -- one
       // bundled directly after text can land as inserted text instead.
-      await invoke("write_pty", { data: `${filePrefix}${message.trim()}` });
+      await invoke("write_pty", { data: `New files added: ${result.files.join(", ")} in .rag-inbox/.` });
       await invoke("write_pty", { data: "\r" });
     } catch (error) {
       setSessionError(String(error));
     }
 
-    setMessage("");
-    setAttachedFiles([]);
-    setSending(false);
+    setAttaching(false);
   }
 
   return (
@@ -227,49 +221,27 @@ export function KnowledgeTerminalPanel() {
 
         <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden bg-black" />
 
-        <div className="space-y-2 border-t border-black/10 p-3">
-          {attachedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {attachedFiles.map((file, index) => (
-                <span
-                  key={`${file.name}-${index}`}
-                  className="flex items-center gap-1 rounded-full bg-black/5 px-2 py-1 text-xs text-black"
-                >
-                  {file.name}
-                  <button type="button" onClick={() => removeFile(index)} aria-label={`Remove ${file.name}`}>
-                    <X className="size-3" />
-                  </button>
-                </span>
-              ))}
-              <span className="px-1 py-1 text-xs text-black/40">{attachedFiles.length} file(s)</span>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                Array.from(event.target.files ?? []).forEach(attachFile);
-                event.target.value = "";
-              }}
-            />
-            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-              Attach
-            </Button>
-            <Input
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder="Message the session…"
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleSend();
-              }}
-            />
-            <Button type="button" size="sm" disabled={sending} onClick={handleSend}>
-              Send
-            </Button>
-          </div>
+        <div className="border-t border-black/10 p-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              handleAttach(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={attaching}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {attaching ? "Adding…" : "Attach files"}
+          </Button>
         </div>
       </div>
     </div>
