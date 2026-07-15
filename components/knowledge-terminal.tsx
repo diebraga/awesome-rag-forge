@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { PlusCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 const PROVIDERS = [
   { id: "claude", label: "Claude Code" },
@@ -14,8 +15,39 @@ const PROVIDERS = [
 const LAST_PROVIDER_KEY = "add-knowledge-last-provider";
 const INITIAL_PROMPT = "Let's add some knowledge to the knowledge base.";
 
-export function KnowledgeTerminal() {
+type TerminalContextValue = { open: boolean; setOpen: (open: boolean) => void };
+const TerminalContext = createContext<TerminalContextValue | null>(null);
+
+export function KnowledgeTerminalProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  return <TerminalContext.Provider value={{ open, setOpen }}>{children}</TerminalContext.Provider>;
+}
+
+function useTerminalContext() {
+  const context = useContext(TerminalContext);
+  if (!context) throw new Error("KnowledgeTerminal components must be used within a KnowledgeTerminalProvider");
+  return context;
+}
+
+/** The header button -- lives in the header row, toggles the panel rendered elsewhere in the layout. */
+export function KnowledgeTerminalToggle() {
+  const { open, setOpen } = useTerminalContext();
+  return (
+    <Button onClick={() => setOpen(!open)} variant="outline" size="sm" type="button">
+      <PlusCircle className="size-4" />
+      Terminal
+    </Button>
+  );
+}
+
+/**
+ * The sliding panel itself. Rendered as an in-flow flex column (not fixed/
+ * overlay) so opening it pushes the rest of the app (header + content) over
+ * instead of covering it -- must be a sibling of the header/content column
+ * in the layout, not nested inside the header.
+ */
+export function KnowledgeTerminalPanel() {
+  const { open, setOpen } = useTerminalContext();
   const [provider, setProvider] = useState<string>(
     () => (typeof window !== "undefined" && window.localStorage.getItem(LAST_PROVIDER_KEY)) || "claude",
   );
@@ -118,16 +150,13 @@ export function KnowledgeTerminal() {
   }
 
   return (
-    <>
-      <Button onClick={() => setOpen((value) => !value)} variant="outline" size="sm" type="button">
-        <PlusCircle className="size-4" />
-        Terminal
-      </Button>
-      <div
-        className={`fixed inset-y-0 left-0 z-40 flex w-[420px] flex-col border-r border-black/10 bg-white shadow-lg transition-transform duration-200 ease-out ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
+    <div
+      className={cn(
+        "h-full shrink-0 overflow-hidden border-r border-black/10 bg-white transition-[width] duration-200 ease-out",
+        open ? "w-[420px]" : "w-0",
+      )}
+    >
+      <div className="flex h-full w-[420px] flex-col">
         <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
           <select
             value={provider}
@@ -194,6 +223,6 @@ export function KnowledgeTerminal() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

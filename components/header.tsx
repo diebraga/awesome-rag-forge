@@ -1,6 +1,6 @@
 "use client";
 
-import { KnowledgeTerminal } from "@/components/knowledge-terminal";
+import { KnowledgeTerminalToggle } from "@/components/knowledge-terminal";
 import { Button } from "@/components/ui/button";
 import {
   Menu,
@@ -46,7 +46,7 @@ export function Header({
       </span>
 
       <div className="flex items-center gap-4">
-        <KnowledgeTerminal />
+        <KnowledgeTerminalToggle />
 
         <Button
           onClick={handleDisconnect}
@@ -59,7 +59,7 @@ export function Header({
         </Button>
         {links.length > 0 && (
           <>
-            <nav className="hidden items-center gap-5 sm:flex">
+            <nav className="hidden items-center gap-5 lg:flex">
               {links.map((link) => {
                 const isActive =
                   link.href === "/"
@@ -84,11 +84,11 @@ export function Header({
             <Menu>
               <MenuTrigger
                 aria-label="Open navigation menu"
-                className="sm:hidden"
+                className="lg:hidden"
               >
                 <MenuIcon className="size-5" />
               </MenuTrigger>
-              <MenuContent className="sm:hidden">
+              <MenuContent className="lg:hidden">
                 {links.map((link) => {
                   const isActive =
                     link.href === "/"
