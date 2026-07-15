@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { PlusCircle, X } from "lucide-react";
+import { Minus, PlusCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,12 @@ export function KnowledgeTerminalToggle() {
  */
 export function KnowledgeTerminalPanel() {
   const { open, setOpen } = useTerminalContext();
+  // Session lifecycle is deliberately decoupled from `open`: collapsing the
+  // panel (open -> false) only hides it visually -- the PTY session and the
+  // xterm instance stay alive underneath (container div stays mounted, just
+  // width: 0). Only the explicit Close button ends the session. Without this
+  // split, every collapse/expand would kill and respawn the CLI.
+  const [sessionActive, setSessionActive] = useState(false);
   const [provider, setProvider] = useState<string>(
     () => (typeof window !== "undefined" && window.localStorage.getItem(LAST_PROVIDER_KEY)) || "claude",
   );
@@ -61,7 +67,11 @@ export function KnowledgeTerminalPanel() {
   const unlistenRefs = useRef<Array<() => void>>([]);
 
   useEffect(() => {
-    if (!open) return;
+    if (open && !sessionActive) setSessionActive(true);
+  }, [open, sessionActive]);
+
+  useEffect(() => {
+    if (!sessionActive) return;
     let cancelled = false;
 
     async function startSession() {
@@ -115,8 +125,9 @@ export function KnowledgeTerminalPanel() {
       terminalRef.current = null;
       import("@tauri-apps/api/core").then(({ invoke }) => invoke("kill_pty").catch(() => {}));
     };
-    // Re-runs on provider change (kills + respawns) and on close (cleanup only).
-  }, [open, provider]);
+    // Re-runs on provider change (kills + respawns) and when the session
+    // ends via the Close button (cleanup only) -- NOT on collapse/expand.
+  }, [sessionActive, provider]);
 
   function attachFile(file: File) {
     setAttachedFiles((prev) => [...prev, file]);
@@ -169,9 +180,31 @@ export function KnowledgeTerminalPanel() {
               </option>
             ))}
           </select>
-          <Button variant="outline" size="sm" type="button" onClick={() => setOpen(false)} aria-label="Close terminal">
-            <X className="size-4" />
-          </Button>
+          <div className="flex gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Collapse terminal"
+              title="Collapse (keeps the session running)"
+            >
+              <Minus className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => {
+                setSessionActive(false);
+                setOpen(false);
+              }}
+              aria-label="Close terminal"
+              title="Close (ends the session)"
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
         </div>
 
         {sessionError && <p className="px-4 py-2 text-sm text-red-600">{sessionError}</p>}
