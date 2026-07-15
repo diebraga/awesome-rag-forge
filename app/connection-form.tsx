@@ -1,35 +1,65 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { connectDatabaseAction } from "./connect-database-action";
 import type { SavedConnectionValues } from "@/lib/connection-keychain";
 
+type FieldKey = keyof SavedConnectionValues;
+
 function Field({
   id,
   label,
   required,
-  defaultValue,
+  value,
+  onChange,
   ...inputProps
-}: { id: string; label: string; required?: boolean } & React.ComponentProps<typeof Input>) {
+}: {
+  id: string;
+  label: string;
+  required?: boolean;
+  value: string;
+  onChange: (value: string) => void;
+} & Omit<React.ComponentProps<typeof Input>, "value" | "onChange" | "defaultValue">) {
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="block text-sm text-black">
         {label} {required ? <span className="text-red-600">*</span> : null}{" "}
         <span className="text-black/40">{required ? "(Required)" : "(Optional)"}</span>
       </label>
-      <Input id={id} name={id} defaultValue={defaultValue} {...inputProps} />
+      <Input
+        id={id}
+        name={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        {...inputProps}
+      />
     </div>
   );
 }
 
+const EMPTY_VALUES: Record<FieldKey, string> = {
+  databaseUrl: "",
+  storageBucket: "",
+  storageAccessKeyId: "",
+  storageSecretAccessKey: "",
+  storageEndpoint: "",
+};
+
 export function ConnectionForm({ savedValues }: { savedValues: SavedConnectionValues }) {
   const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
+  const [values, setValues] = useState<Record<FieldKey, string>>({
+    ...EMPTY_VALUES,
+    ...savedValues,
+  });
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function setField(key: FieldKey) {
+    return (value: string) => setValues((prev) => ({ ...prev, [key]: value }));
+  }
 
   async function handleSubmit(formData: FormData) {
     setConnecting(true);
@@ -44,45 +74,50 @@ export function ConnectionForm({ savedValues }: { savedValues: SavedConnectionVa
   }
 
   return (
-    <form ref={formRef} action={handleSubmit} className="space-y-4">
+    <form action={handleSubmit} className="space-y-4">
       <Field
         id="databaseUrl"
         label="Database URL"
         required
         type="password"
         placeholder="e.g., postgresql://user:password@localhost:5432/mydatabase"
-        defaultValue={savedValues.databaseUrl}
+        value={values.databaseUrl}
+        onChange={setField("databaseUrl")}
       />
       <Field
         id="storageBucket"
         label="Storage Bucket Name"
         placeholder="e.g., global-knowledge-assets"
-        defaultValue={savedValues.storageBucket}
+        value={values.storageBucket}
+        onChange={setField("storageBucket")}
       />
       <Field
         id="storageAccessKeyId"
         label="Access Key ID"
         placeholder="e.g., AKIA1234567890EXAMPLE"
-        defaultValue={savedValues.storageAccessKeyId}
+        value={values.storageAccessKeyId}
+        onChange={setField("storageAccessKeyId")}
       />
       <Field
         id="storageSecretAccessKey"
         label="Secret Access Key"
         type="password"
         placeholder="········"
-        defaultValue={savedValues.storageSecretAccessKey}
+        value={values.storageSecretAccessKey}
+        onChange={setField("storageSecretAccessKey")}
       />
       <Field
         id="storageEndpoint"
         label="Storage Endpoint"
         placeholder="e.g., https://s3.us-east-1.amazonaws.com"
-        defaultValue={savedValues.storageEndpoint}
+        value={values.storageEndpoint}
+        onChange={setField("storageEndpoint")}
       />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex justify-end gap-2 border-t border-black/10 pt-4">
-        <Button type="button" variant="outline" onClick={() => formRef.current?.reset()}>
+        <Button type="button" variant="outline" onClick={() => setValues(EMPTY_VALUES)}>
           Clear
         </Button>
         <Button type="submit" disabled={connecting}>
