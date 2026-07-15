@@ -116,6 +116,11 @@ export function ConnectionForm({ savedValues }: { savedValues: SavedConnectionVa
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
+      <p className="text-xs leading-5 text-black/40">
+        No storage bucket keys? Uploaded files are still read and their text stored in the
+        knowledge base — you just won&apos;t be able to download the original file back out later.
+      </p>
+
       <div className="flex justify-end gap-2 border-t border-black/10 pt-4">
         <Button type="button" variant="outline" onClick={() => setValues(EMPTY_VALUES)}>
           Clear
