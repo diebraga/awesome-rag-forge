@@ -4,10 +4,10 @@ import { getLocalRequestFailure } from "@/lib/local-request-guard";
 
 /**
  * Flips the in-memory "simulate disconnected database" toggle used by the
- * /review dashboard, so a local developer can preview the
- * DatabaseSetupRequired/DatabaseConnectionFailed screens without editing
- * DATABASE_URL and restarting the server. Local-only, non-production-only
- * -- same posture as /api/setup/open-terminal and /api/ollama/start.
+ * Header's Disconnect button, so a local developer can preview the
+ * connection gate (app/connection-gate.tsx) without editing DATABASE_URL
+ * and restarting the server. Local-only, non-production-only -- same
+ * posture as /api/ollama/start.
  *
  * @swagger
  * /api/dev/toggle-disconnect:

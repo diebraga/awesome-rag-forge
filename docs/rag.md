@@ -40,7 +40,7 @@ New knowledge follows a direct-or-review path:
 
 1. `propose_source_insert` (or `propose_file_upload` for a PDF) — read-only, returns a proposal (recommended collection, document metadata, chunk plan, warnings).
 2. `approve_source_insert` (or `approve_file_upload`) — writes only if `userApproval: true`. Clean items (`READY_FOR_BATCH_APPROVAL` / `trustedUseBlocked: false`) are saved as `APPROVED` and become usable immediately, without asking a second confirmation if the user already asked to add them. Ambiguous/problematic items return clear decision options: `APPROVE_ANYWAY`, `SEND_TO_REVIEW`, revise/merge/update, or cancel. `SEND_TO_REVIEW` saves `PENDING_REVIEW` with `reviewReason`; `APPROVE_ANYWAY` saves `APPROVED` and records the override.
-3. `approve_chunk` / `reject_chunk` — or the guarded local `/review` page's equivalent server actions — is only needed for items routed to review. It moves chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already.
+3. `approve_chunk` / `reject_chunk` — only needed for items routed to review. It moves chunks to `APPROVED` or `REJECTED`, creating a `RagReview` record. Approving a chunk also flips its parent `RagDocument.status` to `APPROVED` if it wasn't already.
 4. **Or**, instead of step 3 for an already-reviewed chunk that just needs correcting: `propose_chunk_update` → `approve_chunk_update` (see [MCP Server](mcp-server.md#correcting-knowledge-propose_chunk_update--approve_chunk_update)). Editing an `APPROVED` chunk sends it back to `PENDING_REVIEW` — the loop re-enters at step 3, it does not skip it. Removal normally goes through MCP `archive_document` (see [MCP Server](mcp-server.md#removing-knowledge-archive_document)); the local Collections detail page also offers a guarded soft-archive action for already-approved visible documents/chunks, with warning and reason.
 
 Only `APPROVED` chunks are surfaced to end users, and only if the parent document and collection are also `APPROVED`/`EXTERNAL`/`CHAT`-visible. Internal or restricted knowledge can exist in the same database for operator/MCP workflows without entering chat retrieval.
@@ -49,7 +49,7 @@ Only `APPROVED` chunks are surfaced to end users, and only if the parent documen
 
 Review triage exists to reduce friction without poisoning the trusted RAG. A clean item is marked `READY_FOR_BATCH_APPROVAL` with `trustedUseBlocked: false` and is added directly to the brain. Risky items are prioritized as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`; those keep `trustedUseBlocked: true`, explain why, and ask the user to choose whether to approve anyway, send to review, revise/merge/update, or cancel.
 
-The MCP `list_pending_reviews` tool and the local `/review` dashboard surface only items that were explicitly sent to review or auto-routed there after the user chose that option. Each pending item explains why it is there, so reviewers do not need to infer the reason from raw metadata.
+The MCP `list_pending_reviews` tool surfaces only items that were explicitly sent to review or auto-routed there after the user chose that option. Each pending item explains why it is there, so reviewers do not need to infer the reason from raw metadata.
 
 ## Feedback and evaluation
 

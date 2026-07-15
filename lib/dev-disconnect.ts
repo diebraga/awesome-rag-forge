@@ -1,10 +1,13 @@
 /**
  * In-memory only, resets on server restart. Lets a local developer preview
- * the DatabaseSetupRequired/DatabaseConnectionFailed screens on demand
- * (from the /review dashboard) without editing DATABASE_URL and restarting
- * the server. Never persisted to disk, never touches the real connection --
- * getDatabaseConnectionStatus() just short-circuits to the "connection"
- * failure branch while this is true, same shape as a genuine outage.
+ * the connection gate (app/connection-gate.tsx) on demand -- via the
+ * "Disconnect" button in components/header.tsx -- without editing
+ * DATABASE_URL and restarting the server. Never persisted to disk, never
+ * touches the real connection -- getDatabaseConnectionStatus() just
+ * short-circuits to the "connection" failure branch while this is true,
+ * same shape as a genuine outage. connectDatabaseAction() clears it again
+ * on a successful reconnect, since submitting the gate's form is an
+ * explicit "connect me" action that must override it.
  *
  * Stored on globalThis, not a plain module-level `let`, for the same reason
  * lib/prisma.ts does: Next.js can give the page-render path and the API
@@ -26,9 +29,9 @@ export function setDevDisconnectSimulated(value: boolean) {
 
 /**
  * Whether the simulate-disconnect toggle is allowed to be flipped at all.
- * Mirrors canAutoStartOllama()/canOpenSetupTerminal(): never in production
- * (this route never ships to Vercel anyway -- see docs/deployment.md -- but
- * this is defense in depth for any other deploy target).
+ * Mirrors canAutoStartOllama() in lib/ollama.ts: never in production (this
+ * route never ships to Vercel anyway -- see docs/deployment.md -- but this
+ * is defense in depth for any other deploy target).
  */
 export function canSimulateDisconnect({
   isProduction = process.env.NODE_ENV === "production",

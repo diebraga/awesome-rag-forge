@@ -42,15 +42,15 @@ lib/
                               approved external chat-visible data for the Collections pages. The
                               Harness page reuses getAssistantConfig() (chat-context.ts)
                               and getApprovedHarnessRules() (harness.ts) directly instead.
-    chunk-embeddings.ts          embedChunkForApproval()/storeChunkEmbedding() — shared between
-                              the MCP server's approve_chunk and app/review/actions.ts, so both
-                              approval paths embed identically; moved here from mcp/rag-manager/
-                              because it's pure logic both sides need (see coding-standards.md)
+    chunk-embeddings.ts          embedChunkForApproval()/storeChunkEmbedding() — used by the
+                              MCP server's approve_chunk and scripts/backfill-rag-embeddings.ts;
+                              moved here from mcp/rag-manager/ because it's pure logic more than
+                              one caller needs (see coding-standards.md)
     retrieval-enrichment.ts      Alias/hypernym generation for chunk metadata, same
                               shared-logic reasoning as chunk-embeddings.ts above
   local-review-guard.ts    assertLocalReviewMode() — fails closed unless ENABLE_TESTING_SURFACE=true
-                            and the runtime isn't production-like; the one gate every /review
-                            server action calls independently before writing
+                            and the runtime isn't production-like; the gate the Collections
+                            page's archive server action calls before writing
   chat-providers/          Swappable chat LLM backend (see docs/mcp-server.md's LLM provider note)
     types.ts                 ChatProvider interface — app/api/chat/route.ts only talks to this
     ollama.ts                 Default/only implementation today, wraps lib/ollama.ts's calls
@@ -67,7 +67,7 @@ mcp/
                               exports `server` so http.ts can reuse the same tool registry
     http.ts                   Optional HTTP transport (npm run mcp:rag-manager:http), localhost-only
                               by default — same tools as stdio, for clients that can't spawn a
-                              stdio subprocess; `/review` does not use this transport
+                              stdio subprocess
     extraction.ts              PDF text extraction (pdf-parse) + OCR fallback (tesseract.js)
     proposal.ts              Builds and validates source-insert / file-upload proposals
     review-triage.ts           buildReviewTriage() — classifies a proposal's disposition

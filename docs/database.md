@@ -35,7 +35,7 @@ The schema uses `Unsupported("vector(768)")` for the chunk embedding column, whi
 | `RagFeedback` | User feedback on an answer or chunk (good/bad/incomplete/unsafe/outdated), plus MCP-only review/resolution fields. The one table the chat app can write to directly, via `POST /api/feedback` — see [System Architecture](architecture.md#the-core-boundary-read-vs-write) — as well as through the MCP server's `add_feedback` tool; both write to the same table. Feedback review itself is MCP-only; see [Feedback Review Loop](feedback-review-loop.md). |
 | `RagEvalCase` | A test question with an expected answer, for future RAG quality evaluation. |
 | `AssistantConfig` | Singleton row holding the chat assistant's display name and instructions. **Not knowledge content** — never retrieved or searched, writable only through the MCP server. |
-| `HarnessRule` | A capability or restriction statement (`kind: CAPABILITY \| RESTRICTION`) describing what the chat can/cannot do, with the same review states as knowledge. **Not knowledge content** — only `APPROVED` rows are read into the system prompt; proposed through the MCP server and finally approved/rejected through MCP or the local-only `/review` page. |
+| `HarnessRule` | A capability or restriction statement (`kind: CAPABILITY \| RESTRICTION`) describing what the chat can/cannot do, with the same review states as knowledge. **Not knowledge content** — only `APPROVED` rows are read into the system prompt; proposed and approved/rejected through the MCP server. |
 
 ### Generic classification fields
 

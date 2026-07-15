@@ -1,6 +1,6 @@
 # MCP Server
 
-The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the supported path for creating, organizing, correcting, archiving, and ingesting knowledge/harness changes. The Next.js chat app only reads approved external chat-visible chunks; the separate local-only `/review` page can approve/reject pending chunks and harness rules directly from the database. See [System Architecture](architecture.md) for the full read/write boundary.
+The MCP server lives at `mcp/rag-manager/` and manages the RAG knowledge base through Prisma. It is the supported path for creating, organizing, correcting, archiving, ingesting, and approving/rejecting knowledge/harness changes. The Next.js chat app only reads approved external chat-visible chunks. See [System Architecture](architecture.md) for the full read/write boundary.
 
 Opening the Next.js app in a browser does not connect this MCP server. The browser UI can test approved external chat-visible knowledge, browse approved external collections and user-chat harness state, submit narrow answer feedback, and use local setup helpers, but it must not be treated as an MCP client. To create or manage RAG/harness data, connect an MCP-capable assistant to this server over stdio from the local clone.
 
@@ -20,7 +20,7 @@ This starts the server on stdio transport, which is how local MCP clients (Claud
 npm run mcp:rag-manager:http
 ```
 
-Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (the `server` instance is exported and reused, see `mcp/rag-manager/http.ts`) — over `StreamableHTTPServerTransport` at `http://127.0.0.1:3200/mcp` instead of stdio. Use this only when a trusted MCP client cannot spawn a stdio subprocess; stdio remains the default and the only transport Claude Desktop/Cursor/etc. need. The local `/review` page does not use this transport.
+Starts the exact same server — same tools, same `mcp/rag-manager/server.ts` (the `server` instance is exported and reused, see `mcp/rag-manager/http.ts`) — over `StreamableHTTPServerTransport` at `http://127.0.0.1:3200/mcp` instead of stdio. Use this only when a trusted MCP client cannot spawn a stdio subprocess; stdio remains the default and the only transport Claude Desktop/Cursor/etc. need.
 
 - **Bound to `127.0.0.1` by default, on purpose.** Override with `MCP_HTTP_HOST`/`MCP_HTTP_PORT`, but this server has full read/write access to the knowledge base (see [Security Considerations](security.md#mcp-server-trust-boundary)) — widening the bind address means putting real authentication in front of it first, not just changing an env var.
 - **Requires a bearer token on every request.** The first time you run `npm run mcp:rag-manager:http`, it generates a random `MCP_AUTH_TOKEN`, saves it to `.env`, and prints it once to the terminal along with the exact header to send: `Authorization: Bearer <token>`. Configure your HTTP-based MCP client with that header — requests without it get a `401`. This token is separate from `APP_API_KEY` (the Next.js testing surface's key) on purpose: they guard different privilege levels, so they never share a credential. To rotate it, delete the `MCP_AUTH_TOKEN` line from `.env` and restart the server; a new one generates.
