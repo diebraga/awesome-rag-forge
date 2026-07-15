@@ -1,0 +1,199 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { PlusCircle, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+const PROVIDERS = [
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex CLI" },
+  { id: "gemini", label: "Gemini CLI" },
+] as const;
+
+const LAST_PROVIDER_KEY = "add-knowledge-last-provider";
+const INITIAL_PROMPT = "Let's add some knowledge to the knowledge base.";
+
+export function KnowledgeTerminal() {
+  const [open, setOpen] = useState(false);
+  const [provider, setProvider] = useState<string>(
+    () => (typeof window !== "undefined" && window.localStorage.getItem(LAST_PROVIDER_KEY)) || "claude",
+  );
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const terminalRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  const unlistenRefs = useRef<Array<() => void>>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    async function startSession() {
+      const { Terminal } = await import("@xterm/xterm");
+      const { FitAddon } = await import("@xterm/addon-fit");
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { listen } = await import("@tauri-apps/api/event");
+      if (cancelled || !containerRef.current) return;
+
+      const term = new Terminal({ convertEol: true, fontSize: 13 });
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(containerRef.current);
+      fitAddon.fit();
+      term.onData((data) => {
+        invoke("write_pty", { data }).catch(() => {});
+      });
+      terminalRef.current = term;
+
+      const unlistenOutput = await listen<string>("pty-output", (event) => {
+        term.write(event.payload);
+      });
+      unlistenRefs.current.push(unlistenOutput);
+
+      setSessionError(null);
+      try {
+        window.localStorage.setItem(LAST_PROVIDER_KEY, provider);
+        const response = await fetch("/api/knowledge/resolve-command", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ providerId: provider, prompt: INITIAL_PROMPT }),
+        });
+        const result = await response.json();
+        if (!result.ok) {
+          setSessionError(result.error);
+          return;
+        }
+        await invoke("spawn_pty", { program: result.program, args: result.args, cwd: result.cwd });
+      } catch {
+        setSessionError("Unable to start a terminal session. This panel only works inside the desktop app.");
+      }
+    }
+
+    startSession();
+
+    return () => {
+      cancelled = true;
+      unlistenRefs.current.forEach((unlisten) => unlisten());
+      unlistenRefs.current = [];
+      terminalRef.current?.dispose();
+      terminalRef.current = null;
+      import("@tauri-apps/api/core").then(({ invoke }) => invoke("kill_pty").catch(() => {}));
+    };
+    // Re-runs on provider change (kills + respawns) and on close (cleanup only).
+  }, [open, provider]);
+
+  function attachFile(file: File) {
+    setAttachedFiles((prev) => [...prev, file]);
+  }
+
+  function removeFile(index: number) {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSend() {
+    if (!message.trim() && attachedFiles.length === 0) return;
+    setSending(true);
+
+    let filePrefix = "";
+    if (attachedFiles.length > 0) {
+      const formData = new FormData();
+      for (const file of attachedFiles) formData.append("files", file);
+      const response = await fetch("/api/knowledge/stage-files", { method: "POST", body: formData });
+      const result = await response.json();
+      if (result.ok) {
+        filePrefix = `New files added: ${result.files.join(", ")} in .rag-inbox/. `;
+      }
+    }
+
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("write_pty", { data: `${filePrefix}${message.trim()}\r` }).catch(() => {});
+
+    setMessage("");
+    setAttachedFiles([]);
+    setSending(false);
+  }
+
+  return (
+    <>
+      <Button onClick={() => setOpen((value) => !value)} variant="outline" size="sm" type="button">
+        <PlusCircle className="size-4" />
+        Terminal
+      </Button>
+      <div
+        className={`fixed inset-y-0 left-0 z-40 flex w-[420px] flex-col border-r border-black/10 bg-white shadow-lg transition-transform duration-200 ease-out ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
+          <select
+            value={provider}
+            onChange={(event) => setProvider(event.target.value)}
+            className="rounded-md border border-black/10 px-2 py-1 text-sm"
+          >
+            {PROVIDERS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <Button variant="outline" size="sm" type="button" onClick={() => setOpen(false)} aria-label="Close terminal">
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        {sessionError && <p className="px-4 py-2 text-sm text-red-600">{sessionError}</p>}
+
+        <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden bg-black" />
+
+        <div className="space-y-2 border-t border-black/10 p-3">
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {attachedFiles.map((file, index) => (
+                <span
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-1 rounded-full bg-black/5 px-2 py-1 text-xs text-black"
+                >
+                  {file.name}
+                  <button type="button" onClick={() => removeFile(index)} aria-label={`Remove ${file.name}`}>
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+              <span className="px-1 py-1 text-xs text-black/40">{attachedFiles.length} file(s)</span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                Array.from(event.target.files ?? []).forEach(attachFile);
+                event.target.value = "";
+              }}
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              Attach
+            </Button>
+            <Input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Message the session…"
+              onKeyDown={(event) => {
+                if (event.key === "Enter") handleSend();
+              }}
+            />
+            <Button type="button" size="sm" disabled={sending} onClick={handleSend}>
+              Send
+            </Button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

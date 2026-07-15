@@ -1,6 +1,6 @@
 "use client";
 
-import { AddKnowledgeButton } from "@/components/add-knowledge-button";
+import { KnowledgeTerminal } from "@/components/knowledge-terminal";
 import { Button } from "@/components/ui/button";
 import {
   Menu,
@@ -46,7 +46,7 @@ export function Header({
       </span>
 
       <div className="flex items-center gap-4">
-        <AddKnowledgeButton />
+        <KnowledgeTerminal />
 
         <Button
           onClick={handleDisconnect}
