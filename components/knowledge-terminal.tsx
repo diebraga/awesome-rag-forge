@@ -86,8 +86,9 @@ export function KnowledgeTerminalPanel() {
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
       fitAddon.fit();
+      term.focus();
       term.onData((data) => {
-        invoke("write_pty", { data }).catch(() => {});
+        invoke("write_pty", { data }).catch((error) => setSessionError(String(error)));
       });
       terminalRef.current = term;
 
@@ -110,6 +111,12 @@ export function KnowledgeTerminalPanel() {
           return;
         }
         await invoke("spawn_pty", { program: result.program, args: result.args, cwd: result.cwd });
+        // Rust opens the PTY at a hardcoded 32x100 -- tell it the terminal's
+        // real size so size-aware interactive CLIs (e.g. Ink-based TUIs like
+        // Claude Code) render and read input correctly instead of assuming
+        // a mismatched size.
+        const dims = fitAddon.proposeDimensions();
+        if (dims) await invoke("resize_pty", { rows: dims.rows, cols: dims.cols });
       } catch {
         setSessionError("Unable to start a terminal session. This panel only works inside the desktop app.");
       }
@@ -153,7 +160,9 @@ export function KnowledgeTerminalPanel() {
     }
 
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("write_pty", { data: `${filePrefix}${message.trim()}\r` }).catch(() => {});
+    await invoke("write_pty", { data: `${filePrefix}${message.trim()}\r` }).catch((error) =>
+      setSessionError(String(error)),
+    );
 
     setMessage("");
     setAttachedFiles([]);
