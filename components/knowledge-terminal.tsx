@@ -160,9 +160,16 @@ export function KnowledgeTerminalPanel() {
     }
 
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("write_pty", { data: `${filePrefix}${message.trim()}\r` }).catch((error) =>
-      setSessionError(String(error)),
-    );
+    try {
+      // Sent as two separate writes, not one "text\r" blob: typing directly
+      // into the terminal sends Enter as its own standalone keystroke, and
+      // some interactive prompts only recognize a lone "\r" as submit -- one
+      // bundled directly after text can land as inserted text instead.
+      await invoke("write_pty", { data: `${filePrefix}${message.trim()}` });
+      await invoke("write_pty", { data: "\r" });
+    } catch (error) {
+      setSessionError(String(error));
+    }
 
     setMessage("");
     setAttachedFiles([]);
