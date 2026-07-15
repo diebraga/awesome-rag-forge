@@ -22,6 +22,7 @@ Load only what's relevant to your current task:
 - [RAG Architecture](docs/rag.md) — chunking, retrieval, review loop, feedback/eval.
 - [Scoped Knowledge](docs/scoped-knowledge.md) - generic per-profile/per-user/per-company memory without owning auth/users.
 - [Feedback Review Loop](docs/feedback-review-loop.md) — token-efficient feedback triage, eval creation, and MCP-only resolution.
+- [Setup UX & Desktop Direction](docs/setup-ux-and-desktop-direction.md) — in-app "run setup" trigger, dev-only disconnect toggle, and the Tauri desktop-packaging direction.
 - [Post-Install Handoff](docs/post-install-handoff.md) — final setup message explaining UI vs. MCP capabilities.
 - [MCP Server](docs/mcp-server.md) — tool list, the propose/approve safety rule, client setup.
 - [API Routes](docs/api-routes.md) — `/api/chat`, `/api/rag`.

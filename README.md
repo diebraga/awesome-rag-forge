@@ -187,7 +187,7 @@ Every route is described in a generated OpenAPI 3.0 spec — interactive Swagger
 
 ## Review dashboard
 
-The local testing UI includes `/review`, a human-friendly review queue for pending chunks and harness rules. This page is deliberately local-only: it reads pending rows directly from the configured Postgres database and uses server actions for approve/reject decisions, guarded by `ENABLE_TESTING_SURFACE=true` and a non-production runtime check (`lib/local-review-guard.ts`). It is not an MCP client, does not require `MCP_AUTH_TOKEN`, and must not be exposed as a hosted admin panel. Collections uses the same local-only guard for its explicit archive action; chat, harness, and HTTP API routes remain approved-data/read-only.
+Pending chunks and harness rules are approved or rejected exclusively through the MCP server (`propose_source_insert` → human approval → `approve_chunk`). Collections uses a local-only guard (`lib/local-review-guard.ts`) for its own, separate explicit archive action; chat, harness, and HTTP API routes remain approved-data/read-only.
 
 ## Public site
 

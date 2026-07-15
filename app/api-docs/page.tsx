@@ -1,10 +1,7 @@
 import { Download } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { getDatabaseConnectionStatus } from "@/lib/database-health";
 import { isTestingSurfaceEnabled } from "@/lib/testing-surface";
-import { DatabaseConnectionFailed } from "../database-connection-failed";
-import { DatabaseSetupRequired } from "../database-setup-required";
 import { TestingSurfaceDisabled } from "../testing-surface-disabled";
 import { SwaggerUiLoader } from "./swagger-ui-loader";
 
@@ -12,19 +9,14 @@ export const metadata = {
   title: "API Docs",
 };
 
-export const dynamic = "force-dynamic";
-
 /**
- * API docs are part of the local testing surface. They only render once the
- * database is configured and ENABLE_TESTING_SURFACE=true, matching the API
- * routes they describe. The spec still contains schema only, never real data.
+ * API docs are part of the local testing surface. The app-wide connection
+ * gate (app/layout.tsx) already guarantees a live database connection
+ * before this page can render at all; this only additionally requires
+ * ENABLE_TESTING_SURFACE=true, matching the API routes they describe. The
+ * spec still contains schema only, never real data.
  */
 export default async function ApiDocsPage() {
-  const database = await getDatabaseConnectionStatus();
-
-  if (!database.ok) {
-    return database.reason === "missing" ? <DatabaseSetupRequired /> : <DatabaseConnectionFailed />;
-  }
 
   if (!isTestingSurfaceEnabled()) {
     return <TestingSurfaceDisabled />;
