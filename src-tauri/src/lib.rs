@@ -1,6 +1,12 @@
+mod pty;
+
+use pty::{kill_pty, resize_pty, spawn_pty, write_pty, PtyState};
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(PtyState::default())
+    .invoke_handler(tauri::generate_handler![spawn_pty, write_pty, resize_pty, kill_pty])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

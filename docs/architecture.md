@@ -23,6 +23,8 @@ Opening the browser does not connect the user to the MCP server. The browser UI 
 
 One narrow exception exists outside the database entirely: `POST /api/ollama/start` can launch the Ollama process itself, so the chat UI's "Connect to Ollama" button works without a terminal. It never touches Prisma, and it's locked to local dev only (see [Security Considerations](security.md#post-apiollamastart-executes-a-process--scoped-deliberately)).
 
+The app itself is unaffected by how it's run: `src-tauri/` is a Tauri (Rust) desktop wrapper that opens the same Next.js dev server in a native window instead of a browser tab (`npx tauri dev`). It's presentation only — no Rust code sits between the browser UI and any of the boundaries above, and none of the read/write rules on this page change based on whether the app is opened as a native window or in a browser. See [Setup UX & Desktop Direction](setup-ux-and-desktop-direction.md) for what's built vs. not yet built (production bundling isn't wired up).
+
 ## `lib/rag/` — where all RAG and harness logic lives
 
 RAG-domain logic is centralized under `lib/rag/`, separate from generic infrastructure (`lib/prisma.ts`, `lib/storage.ts`, `lib/ollama.ts`, `lib/utils.ts`):

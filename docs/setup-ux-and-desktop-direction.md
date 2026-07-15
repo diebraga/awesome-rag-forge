@@ -82,6 +82,33 @@ support is for, without needing the whole app rewritten in Rust.
   touching `src-tauri/` at all, today or after the sidecar work above — only new *native*
   capabilities (menus, tray, keychain-backed secrets, a second sidecar) would.
 
+## In-app terminal panel (Add Knowledge)
+
+The header's "Terminal" button opens a real, interactive terminal inside the Tauri
+window itself -- not an external `Terminal.app` window. This replaced the earlier
+`osascript`-based launcher entirely (see git history for `lib/setup-terminal.ts` and
+`lib/provider-terminal.ts` if you need the old approach for reference).
+
+**How it works:** `src-tauri/src/pty.rs` uses `portable-pty` to open a real PTY and
+spawn the chosen CLI (Claude Code, Codex CLI, or Gemini CLI) directly -- as a program +
+argv array, no shell string, so there's no AppleScript/shell-quoting class of bug to
+maintain. `components/knowledge-terminal.tsx` renders the session with `@xterm/xterm`,
+forwarding keystrokes to `write_pty` and rendering the `pty-output` event stream.
+
+**Composer bar:** attaching a file only adds it to a tray (like a chat attachment) --
+nothing is staged until you press Send, which stages files into `.rag-inbox/`
+(`POST /api/knowledge/stage-files`) and types a combined message into the live session.
+
+**Tauri-only:** this only works inside the real Tauri webview (`npx tauri dev`) --
+`invoke`/`listen` require `window.__TAURI__`, which a plain browser tab hitting
+`localhost:3000` doesn't have. The panel UI still renders in a browser tab; the PTY
+session itself will show `sessionError` there.
+
+**One session at a time:** switching the CLI picker while the panel is open kills the
+current session and starts a fresh one for the newly selected provider. Closing the
+panel kills the session; reopening always starts clean -- no session persistence across
+a close (YAGNI; revisit only if that's actually missed).
+
 ## Production/Vercel is unaffected
 
 None of the above changes what ships to production. This project's Vercel deployment

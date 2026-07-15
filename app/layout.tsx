@@ -11,6 +11,7 @@ import { loadSavedConnectionValues } from "@/lib/connection-keychain";
 import { TestingApiAuthPrompt } from "./testing-api-auth-prompt";
 import { DeveloperModeBanner } from "./developer-mode-banner";
 import { ConnectionGate } from "./connection-gate";
+import { KnowledgeTerminalPanel, KnowledgeTerminalProvider } from "@/components/knowledge-terminal";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
@@ -32,14 +33,17 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className={cn("h-full antialiased", "font-sans", geist.variable)}>
-      <body className="flex h-dvh flex-col overflow-hidden bg-white">
+      <body className="flex h-dvh overflow-hidden bg-white">
         {database.ok ? (
-          <>
-            <Header testingSurfaceEnabled={testingSurfaceEnabled} />
-            {developerMode && <DeveloperModeBanner />}
-            {testingSurfaceEnabled && <TestingApiAuthPrompt />}
-            <div className="relative z-0 min-h-0 flex-1">{children}</div>
-          </>
+          <KnowledgeTerminalProvider>
+            <KnowledgeTerminalPanel />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <Header testingSurfaceEnabled={testingSurfaceEnabled} />
+              {developerMode && <DeveloperModeBanner />}
+              {testingSurfaceEnabled && <TestingApiAuthPrompt />}
+              <div className="relative z-0 min-h-0 flex-1">{children}</div>
+            </div>
+          </KnowledgeTerminalProvider>
         ) : (
           <ConnectionGate savedValues={loadSavedConnectionValues()} />
         )}

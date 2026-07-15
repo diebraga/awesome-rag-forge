@@ -6,6 +6,7 @@ Generic RAG knowledge base builder managed through an MCP server, with a strict 
 
 - **Chat app (`app/`)** is a **read-only** viewer for testing retrieval and answering questions from the approved knowledge base. It must never create, edit, approve, reject, archive, or delete anything.
 - **MCP server (`mcp/rag-manager`)** is the **only** component authorized to manage the knowledge base, through a propose → human approval → write workflow.
+- **Desktop wrapper (`src-tauri/`)** is a Tauri (Rust) shell around the Next.js dev server, giving it a native app window instead of a browser tab — see [Setup UX & Desktop Direction](docs/setup-ux-and-desktop-direction.md). It doesn't change the read-only/MCP-write split above.
 
 Read [docs/overview.md](docs/overview.md) and [docs/architecture.md](docs/architecture.md) for the full picture before making changes.
 

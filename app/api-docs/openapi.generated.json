@@ -514,6 +514,46 @@
         }
       }
     },
+    "/api/knowledge/stage-files": {
+      "post": {
+        "summary": "Stage files attached in the terminal panel's composer into .rag-inbox/",
+        "description": "Local-only. Writes uploaded files flat into .rag-inbox/ and returns their saved names, so the frontend can build the \"New files added\" message sent into the live PTY session.",
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Files staged"
+          },
+          "400": {
+            "description": "No files provided"
+          },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
+          }
+        }
+      }
+    },
+    "/api/knowledge/resolve-command": {
+      "post": {
+        "summary": "Resolve which program/args the in-app terminal panel should spawn for a provider",
+        "description": "Local-only. Returns the CLI binary + prompt if installed, or the provider's install command (as argv, no shell) if not -- the frontend passes this straight to the Tauri spawn_pty command.",
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved program + args + cwd"
+          },
+          "400": {
+            "description": "Unknown provider"
+          },
+          "403": {
+            "description": "Request did not originate from this machine's own browser (localhost-only guard)"
+          }
+        }
+      }
+    },
     "/api/feedback": {
       "post": {
         "summary": "Record a thumbs up/down reaction to an answer",
