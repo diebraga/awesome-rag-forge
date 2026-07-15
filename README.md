@@ -13,6 +13,7 @@ A local-first RAG knowledge-base builder managed through an MCP server, with a l
 ![Prisma](https://img.shields.io/badge/Prisma-7.8.0-2d3748)
 ![Postgres](https://img.shields.io/badge/Postgres-pgvector-4169e1)
 ![MCP](https://img.shields.io/badge/MCP-local%20server-6f42c1)
+![Tauri](https://img.shields.io/badge/Desktop-Tauri%20(Rust)-ffc131)
 ![Vitest](https://img.shields.io/badge/tests-Vitest-6e9f18)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -101,6 +102,7 @@ Scoped knowledge is the planned way to add personalization while keeping the pro
 | PDF/OCR | `pdf-parse`, `tesseract.js` |
 | API docs | Swagger JSDoc -> generated OpenAPI JSON -> Swagger UI |
 | Tests | Vitest, ESLint, Prisma validation |
+| Desktop wrapper | Tauri (Rust) — opens the same dev server in a native window; see [Setup UX & Desktop Direction](docs/setup-ux-and-desktop-direction.md) |
 
 ## Repository Structure
 
