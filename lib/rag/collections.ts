@@ -1,4 +1,13 @@
 import { prisma } from "@/lib/prisma";
+import { getOrSetCached } from "@/lib/ttl-cache";
+
+// Read-only approved-data queries against this project's DATABASE_URL, which
+// is commonly a remote host (e.g. Prisma Postgres) rather than localhost --
+// each of these otherwise pays a real network round-trip on every single
+// page navigation. A short TTL keeps repeat browsing snappy while staying
+// fresh enough that an MCP write shows up within a few seconds. See
+// lib/database-health.ts for the original case this pattern solved.
+const READ_CACHE_TTL_MS = 5000;
 
 /**
  * Approved-data reads for the Collections pages (app/collections/). This is
@@ -41,6 +50,8 @@ export async function listApprovedCollections(page = 1, pageSize = DEFAULT_PAGE_
 }> {
   const safePage = Math.max(1, page);
   const safePageSize = Math.min(Math.max(1, pageSize), 50);
+
+  return getOrSetCached(`collections:list:${safePage}:${safePageSize}`, READ_CACHE_TTL_MS, async () => {
   const where = {
     audience: "EXTERNAL" as const,
     visibility: { has: "CHAT" as const },
@@ -103,6 +114,7 @@ export async function listApprovedCollections(page = 1, pageSize = DEFAULT_PAGE_
     totalCollections,
     totalPages: Math.max(1, Math.ceil(totalCollections / safePageSize)),
   };
+  });
 }
 
 export type CollectionDetailChunk = {
@@ -150,6 +162,7 @@ export async function getCollectionDetail(
   const safePage = Math.max(1, page);
   const safePageSize = Math.min(Math.max(1, pageSize), 50);
 
+  return getOrSetCached(`collections:detail:${collectionId}:${safePage}:${safePageSize}`, READ_CACHE_TTL_MS, async () => {
   const collection = await prisma.ragCollection.findFirst({
     where: {
       id: collectionId,
@@ -210,4 +223,5 @@ export async function getCollectionDetail(
     totalDocuments,
     totalPages: Math.max(1, Math.ceil(totalDocuments / safePageSize)),
   };
+  });
 }

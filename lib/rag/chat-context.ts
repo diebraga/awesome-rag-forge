@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getRagContext, type RagCitation } from "@/lib/rag/retrieval";
 import { buildApprovedChatChunkWhere } from "@/lib/rag/visibility";
 import { getApprovedHarnessRules } from "@/lib/rag/harness";
+import { getOrSetCached } from "@/lib/ttl-cache";
 
 /**
  * This file is the single, complete definition of how the read-only test
@@ -51,8 +52,14 @@ export type AssistantContext = {
  * separate from RagCollection/RagDocument/RagChunk on purpose — it is
  * configuration, not retrievable knowledge, and is writable only through
  * the MCP server (see mcp/rag-manager/server.ts, `set_assistant_name`).
+ *
+ * Cached briefly (read-only, changes rarely) so it doesn't re-pay a network
+ * round-trip to a commonly-remote DATABASE_URL on every chat turn and every
+ * Harness page load. See lib/database-health.ts for the original case this
+ * pattern solved.
  */
 export async function getAssistantConfig() {
+  return getOrSetCached("chat-context:assistant-config", 5000, async () => {
   const config = await prisma.assistantConfig.findFirst({
     orderBy: { createdAt: "asc" },
   });
@@ -61,6 +68,7 @@ export async function getAssistantConfig() {
     name: config?.name ?? DEFAULT_ASSISTANT_NAME,
     instructions: config?.instructions ?? null,
   };
+  });
 }
 
 /**

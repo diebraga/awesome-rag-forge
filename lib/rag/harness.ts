@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { HarnessRuleKind, HarnessRuleScope } from "@/generated/prisma/enums";
+import { getOrSetCached } from "@/lib/ttl-cache";
 
 /**
  * The harness describes what the read-only chat can and cannot do, on top
@@ -211,15 +212,25 @@ export function buildHarnessProposal(
 
 type PrismaLike = Pick<PrismaClient, "harnessRule">;
 
-export async function getApprovedHarnessRules(prisma: PrismaLike) {
-  const rules = await prisma.harnessRule.findMany({
-    where: { status: "APPROVED", scope: { in: ["USER_CHAT", "ALL"] } },
-    orderBy: { createdAt: "asc" },
-  });
+// Read-only, used by both the chat's system-prompt assembly and the Harness
+// testing page -- cached briefly so it doesn't re-pay a network round-trip
+// to a (commonly remote) DATABASE_URL on every chat turn/navigation. See
+// lib/database-health.ts for the original case this pattern solved.
+// Up to 5s staleness after an MCP approval is an accepted tradeoff, same as
+// the other approved-data reads that use this cache.
+const APPROVED_RULES_CACHE_TTL_MS = 5000;
 
-  return {
-    capabilities: rules.filter((rule) => rule.kind === "CAPABILITY").map((rule) => rule.statement),
-    restrictions: rules.filter((rule) => rule.kind === "RESTRICTION").map((rule) => rule.statement),
-    rules: rules.map((rule) => ({ id: rule.id, kind: rule.kind, statement: rule.statement, scope: rule.scope })),
-  };
+export async function getApprovedHarnessRules(prisma: PrismaLike) {
+  return getOrSetCached("harness:approved-rules", APPROVED_RULES_CACHE_TTL_MS, async () => {
+    const rules = await prisma.harnessRule.findMany({
+      where: { status: "APPROVED", scope: { in: ["USER_CHAT", "ALL"] } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return {
+      capabilities: rules.filter((rule) => rule.kind === "CAPABILITY").map((rule) => rule.statement),
+      restrictions: rules.filter((rule) => rule.kind === "RESTRICTION").map((rule) => rule.statement),
+      rules: rules.map((rule) => ({ id: rule.id, kind: rule.kind, statement: rule.statement, scope: rule.scope })),
+    };
+  });
 }
