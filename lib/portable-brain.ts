@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { PrismaClient } from "../generated/prisma/client";
+import { getOrSetCached } from "@/lib/ttl-cache";
 
 export const PORTABLE_BRAIN_SNAPSHOT_VERSION = 1;
 
@@ -142,36 +143,48 @@ export function summarizePortableBrainSnapshot(snapshot: PortableBrainSnapshot):
   };
 }
 
+// Read-only inspection of the connected Postgres brain, used only to render
+// the Portable Brain page -- cached briefly since it otherwise blocks that
+// page's server render on several real queries against a (commonly remote)
+// DATABASE_URL on every navigation. Never used by the export/import scripts,
+// which need a precise, uncached count. See lib/database-health.ts for the
+// original case this pattern solved.
+const BRAIN_STATS_CACHE_TTL_MS = 5000;
+
 export async function getPortableBrainStats(prisma: PrismaClient): Promise<PortableBrainStats> {
-  const tableList = BRAIN_TABLES.map(quoteSqlLiteral).join(", ");
-  const [versionRows, vectorRows, tableRows] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<{ version: string }>>("select version() as version"),
-    prisma.$queryRawUnsafe<Array<{ extname: string }>>("select extname from pg_extension where extname = 'vector'"),
-    prisma.$queryRawUnsafe<Array<{ table_name: string }>>(
-      `select table_name from information_schema.tables where table_schema = 'public' and table_name in (${tableList})`,
-    ),
-  ]);
+  return getOrSetCached("portable-brain:stats", BRAIN_STATS_CACHE_TTL_MS, async () => {
+    const tableList = BRAIN_TABLES.map(quoteSqlLiteral).join(", ");
+    const [versionRows, vectorRows, tableRows] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ version: string }>>("select version() as version"),
+      prisma.$queryRawUnsafe<Array<{ extname: string }>>("select extname from pg_extension where extname = 'vector'"),
+      prisma.$queryRawUnsafe<Array<{ table_name: string }>>(
+        `select table_name from information_schema.tables where table_schema = 'public' and table_name in (${tableList})`,
+      ),
+    ]);
 
-  const installedTables = tableRows.map((row) => row.table_name).sort();
-  const installed = new Set(installedTables);
-  const counts = await Promise.all(BRAIN_TABLES.map((table) => (installed.has(table) ? countRows(prisma, table) : 0)));
+    const installedTables = tableRows.map((row) => row.table_name).sort();
+    const installed = new Set(installedTables);
+    const counts = await Promise.all(
+      BRAIN_TABLES.map((table) => (installed.has(table) ? countRows(prisma, table) : 0)),
+    );
 
-  return {
-    postgresVersion: versionRows[0]?.version ?? null,
-    pgvectorInstalled: vectorRows.length > 0,
-    installedTables,
-    missingTables: BRAIN_TABLES.filter((table) => !installed.has(table)),
-    scopes: counts[0],
-    collections: counts[1],
-    documents: counts[2],
-    chunks: counts[3],
-    sources: counts[4],
-    feedback: counts[5],
-    reviews: counts[6],
-    assistantConfigs: counts[7],
-    harnessRules: counts[8],
-    evalCases: counts[9],
-  };
+    return {
+      postgresVersion: versionRows[0]?.version ?? null,
+      pgvectorInstalled: vectorRows.length > 0,
+      installedTables,
+      missingTables: BRAIN_TABLES.filter((table) => !installed.has(table)),
+      scopes: counts[0],
+      collections: counts[1],
+      documents: counts[2],
+      chunks: counts[3],
+      sources: counts[4],
+      feedback: counts[5],
+      reviews: counts[6],
+      assistantConfigs: counts[7],
+      harnessRules: counts[8],
+      evalCases: counts[9],
+    };
+  });
 }
 
 export async function createPortableBrainSnapshot(
