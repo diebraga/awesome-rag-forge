@@ -4,7 +4,7 @@
   <img src="public/images/awesome-rag-forge-network.webp" alt="Awesome RAG Forge network diagram" width="520">
 </p>
 
-A local-first RAG knowledge-base builder managed through an MCP server, with a local testing UI and approval-gated knowledge operations.
+Build your RAG knowledge base and harness in natural language, with approval-gated writes and built-in hybrid-retrieval orchestration at query time. Works with your favorite MCP client — Claude, Codex, or Gemini — from a self-hosted desktop app (no SaaS backend).
 
 ![Next.js](https://img.shields.io/badge/Next.js-16.2.4-black)
 ![React](https://img.shields.io/badge/React-19.2.4-149eca)
@@ -41,15 +41,21 @@ If a user drops this repository into an AI coding assistant and asks to set it u
 
 ## Overview
 
-awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. A user connects an MCP-capable assistant, asks it to create or improve the knowledge base, and clean knowledge is added directly to the live brain while ambiguous/problematic items are routed to review.
+awesome-rag-forge exists to make a project-specific RAG system editable through natural language without turning the web app into an admin panel. Open the in-app terminal (Claude Code, Codex CLI, or Gemini CLI, connected over MCP), tell it what to add, and clean knowledge is added directly to the live brain while ambiguous/problematic items are routed to review — you only get asked to decide when something's actually ambiguous or conflicting.
 
-The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. The system should capture added knowledge, organize it, make clean additions usable immediately, and prioritize review only when content is ambiguous, risky, or potentially conflicting. It is meant for builders who want local-first RAG management, human approval, portable API/client documentation, and a clear separation between “using the knowledge base” and “changing the knowledge base.”
+Two different kinds of automatic decision-making are built in, and it's worth telling them apart:
 
-Current status: early local-first project. The MCP server can manage RAG knowledge, harness rules, feedback review, PDF ingestion, and eval creation workflows. The Next.js UI is a testing surface, not a production admin dashboard.
+- **Write-time triage**: when knowledge is proposed, it's classified — a clean addition saves straight to `APPROVED`; a conflict (`CONFLICTS_WITH_APPROVED`, `DUPLICATE_OR_UPDATE_CANDIDATE`, etc.) stops and asks you to choose. This is a gate, not an agent loop — the actual tool-calling orchestration (deciding what to read, when to call which MCP tool) is the connected client's job (Claude Code/Codex/Gemini), by design, so this project doesn't reinvent a worse version of it.
+- **Read-time orchestration**: every chat turn genuinely does coordinate multiple steps automatically — hybrid semantic + lexical retrieval runs in parallel, gets merged and ranked, and is assembled together with the assistant's identity and approved harness rules into one system prompt. This part has no MCP client involved at all; it just runs.
+
+The business goal is simple: reduce the friction of building a high-quality, reviewable knowledge base while keeping production-facing surfaces small, read-only, and hard to misuse. It is meant for builders who want self-hosted RAG management (no SaaS backend — you run it, you own the database), human approval where it matters, portable API/client documentation, and a clear separation between "using the knowledge base" and "changing the knowledge base."
+
+Current status: early self-hosted project, packaged as a Tauri (Rust) desktop app wrapping the Next.js core. The MCP server can manage RAG knowledge, harness rules, feedback review, PDF ingestion, and eval creation workflows. The Next.js UI is a testing surface, not a production admin dashboard.
 
 ## Key Features
 
 - **MCP-managed knowledge base**: create, review, approve, archive, and inspect RAG knowledge through MCP tools.
+- **In-app terminal panel**: the desktop app's header has a "Terminal" button that opens a real, interactive terminal inside the window itself (native PTY via Rust `portable-pty`, rendered with `xterm.js`) — pick Claude Code, Codex CLI, or Gemini CLI, and talk to it directly to add knowledge; no external terminal window needed.
 - **Review triage**: clean knowledge is saved directly as `APPROVED`; ambiguous/problematic knowledge is saved as `PENDING_REVIEW` with clear reasons such as `NEEDS_REVIEW`, `CONFLICTS_WITH_APPROVED`, or `DUPLICATE_OR_UPDATE_CANDIDATE`.
 - **Local testing UI**: chat, collections, harness, and API docs render only when the testing surface and database are ready; Collections can archive approved visible knowledge after an explicit warning/confirmation.
 - **Human approval boundary where it matters**: MCP writes still require explicit user approval, but human review is reserved for ambiguous/problematic knowledge and harness changes.
@@ -179,7 +185,7 @@ This is not Supabase-specific; Supabase is just one Postgres provider. It is als
 
 The chat's reply-generating backend is swappable, not hardcoded — `app/api/chat/route.ts` only ever talks to a `ChatProvider` interface (`lib/chat-providers/types.ts`), never to a specific model API directly. Ollama is the offline default; Claude, Codex/OpenAI, and Gemini are available for hosted testing when their API keys are present in `.env`.
 
-The testing UI shows a provider chooser, caches the selected provider in the browser, and goes straight back to chat on reload once that provider is configured. If a hosted provider is missing its key, the UI shows a copyable setup prompt for the user's coding assistant instead of asking for secrets in the browser. Ollama remains local-first: the UI can attempt to install/start it on the same machine when local-only guards allow it, then pull one of the small allowlisted test models.
+The testing UI shows a provider chooser, caches the selected provider in the browser, and goes straight back to chat on reload once that provider is configured. If a hosted provider is missing its key, the UI shows a copyable setup prompt for the user's coding assistant instead of asking for secrets in the browser. Ollama runs on your own machine: the UI can attempt to install/start it locally when local-only guards allow it, then pull one of the small allowlisted test models — no hosted inference required to test the chat.
 
 The HTTP surface is intentionally split: chat/context/collections/document-download/harness routes are read-only testing and integration surfaces over approved data, while `/api/ollama/*` and `/api/chat/providers` are local setup/support routes. Knowledge and harness management still never happen over these HTTP routes. The only browser-side knowledge maintenance exception is the local Collections page server action that archives visible approved documents/chunks after confirmation.
 
