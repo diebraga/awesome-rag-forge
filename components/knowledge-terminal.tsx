@@ -170,6 +170,25 @@ export function KnowledgeTerminalPanel() {
     setAttaching(false);
   }
 
+  // Lets a copied file (Finder "Copy", a screenshot, etc.) be pasted straight
+  // in with Cmd+V, without opening the file picker -- the Attach button stays
+  // as-is for browsing. Only intercepts pastes that actually carry a file;
+  // a plain-text paste (e.g. into the live terminal) is left alone so it
+  // still reaches whatever has focus.
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePaste(event: ClipboardEvent) {
+      const files = event.clipboardData?.files;
+      if (!files || files.length === 0) return;
+      event.preventDefault();
+      handleAttach(files);
+    }
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [open]);
+
   return (
     <div
       className={cn(
@@ -242,6 +261,7 @@ export function KnowledgeTerminalPanel() {
           >
             {attaching ? "Adding…" : "Attach files"}
           </Button>
+          <p className="mt-1.5 text-center text-xs text-black/40">or paste a copied file with ⌘V</p>
         </div>
       </div>
     </div>
