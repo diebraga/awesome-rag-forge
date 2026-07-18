@@ -43,6 +43,8 @@ type CollectionDetailResponse = {
     tags: string[];
     audience: string;
     visibility: string[];
+    createdAt: string;
+    updatedAt: string;
   };
   documents?: CollectionDetailDocument[];
   page?: number;
@@ -295,6 +297,10 @@ export default function CollectionDetailPage({
                     .join(" · ")}
                 </p>
               )}
+              <p className="text-xs text-black/40">
+                Added {new Date(data.collection.createdAt).toLocaleDateString()} · Last edited{" "}
+                {new Date(data.collection.updatedAt).toLocaleDateString()}
+              </p>
             </header>
 
             <div className="space-y-3">

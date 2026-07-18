@@ -21,6 +21,8 @@ type CollectionSummary = {
   visibility: string[];
   approvedDocumentCount: number;
   approvedChunkCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type CollectionsResponse = {
@@ -125,6 +127,10 @@ export default function CollectionsPage() {
                           {[collection.category, collection.domain].filter(Boolean).join(" · ")}
                         </p>
                       )}
+                      <p className="truncate text-xs text-black/40">
+                        Added {new Date(collection.createdAt).toLocaleDateString()} · Last edited{" "}
+                        {new Date(collection.updatedAt).toLocaleDateString()}
+                      </p>
                     </div>
                     <ChevronRight className="size-4 shrink-0 text-black/40" />
                   </Link>
