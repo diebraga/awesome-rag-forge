@@ -39,6 +39,8 @@ export type CollectionSummary = {
   visibility: string[];
   approvedDocumentCount: number;
   approvedChunkCount: number;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export async function listApprovedCollections(page = 1, pageSize = DEFAULT_PAGE_SIZE): Promise<{
@@ -77,6 +79,8 @@ export async function listApprovedCollections(page = 1, pageSize = DEFAULT_PAGE_
       tags: true,
       audience: true,
       visibility: true,
+      createdAt: true,
+      updatedAt: true,
       documents: {
         where: { status: "APPROVED", audience: "EXTERNAL", visibility: { has: "CHAT" } },
         select: {
@@ -108,6 +112,8 @@ export async function listApprovedCollections(page = 1, pageSize = DEFAULT_PAGE_
       (sum, document) => sum + document.chunks.length,
       0,
     ),
+    createdAt: collection.createdAt,
+    updatedAt: collection.updatedAt,
   })),
     page: safePage,
     pageSize: safePageSize,
@@ -146,6 +152,8 @@ export type CollectionDetail = {
     tags: string[];
     audience: string;
     visibility: string[];
+    createdAt: Date;
+    updatedAt: Date;
   };
   documents: CollectionDetailDocument[];
   page: number;
@@ -178,6 +186,8 @@ export async function getCollectionDetail(
       tags: true,
       audience: true,
       visibility: true,
+      createdAt: true,
+      updatedAt: true,
     },
   });
 
